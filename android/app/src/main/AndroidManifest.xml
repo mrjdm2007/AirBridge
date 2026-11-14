@@ -13,6 +13,7 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:supportsRtl="true">
+        <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />
         <service
             android:name=".NetworkTransferService"
             android:exported="false"
