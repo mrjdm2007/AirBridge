@@ -185,6 +185,7 @@ final class LANTransferController: ObservableObject {
                 }
             }
             if let error {
+                parser.abort()
                 Task { @MainActor in self?.error = "Incoming transfer: \(error.localizedDescription)" }
                 connection.cancel()
             } else if complete {
