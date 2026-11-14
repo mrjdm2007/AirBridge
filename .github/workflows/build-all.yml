@@ -82,6 +82,11 @@ jobs:
           <key>NSHighResolutionCapable</key><true/>
           </dict></plist>
           PLIST
+          # Apply a valid ad-hoc signature to the complete app bundle. This
+          # prevents an unsigned/invalid bundle from being mistaken for a
+          # corrupted app, but is not a Developer ID signature or notarization.
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" AirBridge-macOS.zip
       - name: Upload macOS app
         uses: actions/upload-artifact@v4
