@@ -1,0 +1,42 @@
+name: macOS build
+
+on:
+  push:
+    paths: ["macos/**", ".github/workflows/macos.yml"]
+  pull_request:
+    paths: ["macos/**", ".github/workflows/macos.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Swift package
+        working-directory: macos
+        run: swift build -c release
+      - name: Package app executable
+        working-directory: macos
+        run: |
+          APP="AirBridge.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp .build/release/AirBridge "$APP/Contents/MacOS/AirBridge"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>AirBridge</string>
+          <key>CFBundleIdentifier</key><string>com.airbridge.app</string>
+          <key>CFBundleName</key><string>AirBridge</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>LSMinimumSystemVersion</key><string>13.0</string>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          ditto -c -k --sequesterRsrc --keepParent "$APP" AirBridge-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AirBridge-macOS
+          path: macos/AirBridge-macOS.zip
+          if-no-files-found: error
+          retention-days: 14
