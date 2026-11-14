@@ -68,30 +68,25 @@ object AirBridgeProtocol {
         val name = safeName(queryName(context, uri) ?: "AirBridge-file")
         val temp = File(context.cacheDir, "outgoing-${System.nanoTime()}.part")
         try {
+            val digest = MessageDigest.getInstance("SHA-256")
             resolver.openInputStream(uri).use { source ->
                 requireNotNull(source) { "Cannot open the selected file." }
-                FileOutputStream(temp).use { target ->
-                    val buffer = ByteArray(IO_BUFFER_BYTES)
-                    var total = 0L
-                    while (true) {
-                        val count = source.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        require(total <= MAX_TRANSFER_BYTES) { "Files larger than 20 GiB are not supported." }
-                        target.write(buffer, 0, count)
+                FileOutputStream(temp).use { fileOutput ->
+                    BufferedOutputStream(fileOutput, IO_BUFFER_BYTES).use { target ->
+                        val buffer = ByteArray(IO_BUFFER_BYTES)
+                        var total = 0L
+                        while (true) {
+                            val count = source.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= MAX_TRANSFER_BYTES) { "Files larger than 20 GiB are not supported." }
+                            target.write(buffer, 0, count)
+                            digest.update(buffer, 0, count)
+                        }
                     }
                 }
             }
-            val digest = MessageDigest.getInstance("SHA-256")
-            val hash = temp.inputStream().use { stream ->
-                val buffer = ByteArray(IO_BUFFER_BYTES)
-                while (true) {
-                    val count = stream.read(buffer)
-                    if (count < 0) break
-                    digest.update(buffer, 0, count)
-                }
-                digest.digest()
-            }
+            val hash = digest.digest()
             Socket().use { socket ->
                 socket.tcpNoDelay = true
                 socket.sendBufferSize = IO_BUFFER_BYTES
