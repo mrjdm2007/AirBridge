@@ -32,6 +32,8 @@ jobs:
           <key>CFBundleName</key><string>AirBridge</string>
           <key>CFBundlePackageType</key><string>APPL</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
+          <key>NSLocalNetworkUsageDescription</key><string>AirBridge discovers and transfers files directly with your paired Android device on your local network.</string>
+          <key>NSBonjourServices</key><array><string>_airbridge._tcp</string></array>
           <key>NSHighResolutionCapable</key><true/>
           </dict></plist>
           PLIST
