@@ -93,7 +93,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AirBridge", fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                        Text("Direct transfers on your local network", fontSize = 12.sp, color = Muted)
+                        Text("Moto Edge 50 Neo ↔ MacBook Air M1", fontSize = 12.sp, color = Muted)
                     }
                     Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(27.dp))
                 }
@@ -123,12 +123,12 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                         Text("${AirBridgeState.pendingUris.size} shared file(s) ready to send", color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
                 }
-                Text("DEVICES ON THIS NETWORK", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
+                Text("YOUR MACBOOK AIR M1", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
                 if (AirBridgeState.peers.isEmpty()) {
                     Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Rounded.Computer, contentDescription = null, tint = Muted, modifier = Modifier.size(28.dp))
-                        Text("Looking for your Mac…", color = Ink, fontWeight = FontWeight.Medium)
-                        Text("Keep both devices on the same Wi-Fi or local network.", color = Muted, fontSize = 11.sp)
+                        Text("Looking for your MacBook Air M1…", color = Ink, fontWeight = FontWeight.Medium)
+                        Text("Connect your MacBook Air M1 to this phone’s hotspot.", color = Muted, fontSize = 11.sp)
                     }
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
