@@ -62,10 +62,13 @@ struct AirBridgePopover: View {
             .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
 
             if !mtp.isConnected {
-                ContentUnavailableView {
-                    Label("Connect your Android", systemImage: "cable.connector")
-                } description: {
+                VStack(spacing: 10) {
+                    Image(systemName: "cable.connector").font(.system(size: 28)).foregroundStyle(.secondary)
+                    Text("Connect your Android").font(.system(size: 14, weight: .medium))
                     Text("Unlock your phone, connect it with a data-capable USB cable, then select “File transfer / Android Auto” in the USB notification. Tap Refresh.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
                 }
                 .frame(maxWidth: .infinity, minHeight: 190)
             } else {
@@ -106,7 +109,10 @@ struct AirBridgePopover: View {
                 .frame(minHeight: 180)
                 .overlay {
                     if mtp.files.isEmpty && !mtp.isLoading {
-                        ContentUnavailableView("No files found", systemImage: "folder")
+                        VStack(spacing: 8) {
+                            Image(systemName: "folder").font(.system(size: 24)).foregroundStyle(.secondary)
+                            Text("No files found").font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
