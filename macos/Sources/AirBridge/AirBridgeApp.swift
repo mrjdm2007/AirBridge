@@ -129,6 +129,24 @@ struct AirBridgePopover: View {
                             }
                             return true
                         }
+                        .contextMenu {
+                            Button {
+                                let text = NSPasteboard.general.string(forType: .string)
+                                guard let text, !text.isEmpty else {
+                                    dropError = "There is no text on the clipboard."
+                                    return
+                                }
+                                let url = FileManager.default.temporaryDirectory.appendingPathComponent("AirBridge-Text-\(UUID().uuidString).txt")
+                                do {
+                                    try Data(text.utf8).write(to: url, options: .atomic)
+                                    selectedURLs.append(url)
+                                    selectedCategory = "Text"
+                                    dropError = nil
+                                } catch { dropError = error.localizedDescription }
+                            } label: {
+                                Label("Paste text", systemImage: "doc.on.clipboard")
+                            }
+                        }
                         .onPasteCommand(of: [.plainText]) { providers in
                             for provider in providers {
                                 _ = provider.loadObject(ofClass: String.self) { value, _ in

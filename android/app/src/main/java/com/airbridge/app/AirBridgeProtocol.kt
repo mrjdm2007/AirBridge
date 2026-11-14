@@ -16,12 +16,14 @@ import java.net.InetAddress
 import java.net.Socket
 import java.security.MessageDigest
 
+data class AirBridgeReceivedItem(val name: String, val textContent: String? = null)
+
 object AirBridgeProtocol {
     private val magic = byteArrayOf(0x41, 0x42, 0x52, 0x31) // ABR1
     private const val MAX_TRANSFER_BYTES = 20L * 1024L * 1024L * 1024L
     private const val IO_BUFFER_BYTES = 1024 * 1024
 
-    fun receive(context: Context, socket: Socket, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
+    fun receive(context: Context, socket: Socket, onProgress: (Long, Long) -> Unit = { _, _ -> }): AirBridgeReceivedItem {
         socket.soTimeout = 120_000
         socket.tcpNoDelay = true
         socket.receiveBufferSize = IO_BUFFER_BYTES
@@ -56,8 +58,9 @@ object AirBridgeProtocol {
                 }
             }
             require(MessageDigest.isEqual(expectedHash, digest.digest())) { "File integrity check failed (SHA-256)." }
+            val textContent = if (name.startsWith("AirBridge-Text-", ignoreCase = true) && name.endsWith(".txt", ignoreCase = true)) temp.readText(Charsets.UTF_8) else null
             saveToDownloads(context, temp, name)
-            return name
+            return AirBridgeReceivedItem(name, textContent)
         } finally {
             temp.delete()
         }

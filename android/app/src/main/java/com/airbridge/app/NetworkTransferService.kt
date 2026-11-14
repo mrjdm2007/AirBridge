@@ -25,6 +25,8 @@ object AirBridgeState {
     val peers = androidx.compose.runtime.mutableStateListOf<AirBridgePeer>()
     var status by androidx.compose.runtime.mutableStateOf("Starting local discovery…")
     var lastReceived by androidx.compose.runtime.mutableStateOf("")
+    var receivedTextName by androidx.compose.runtime.mutableStateOf("")
+    var receivedTextContent by androidx.compose.runtime.mutableStateOf<String?>(null)
     var transferProgress by androidx.compose.runtime.mutableFloatStateOf(0f)
     var transferActive by androidx.compose.runtime.mutableStateOf(false)
     var transferLabel by androidx.compose.runtime.mutableStateOf("")
@@ -89,7 +91,7 @@ class NetworkTransferService : Service() {
                             try {
                                 socket.soTimeout = 120_000
                                 AirBridgeState.update { AirBridgeState.transferActive = true; AirBridgeState.transferProgress = 0f; AirBridgeState.transferLabel = "Receiving file" }
-                                val name = AirBridgeProtocol.receive(this, socket) { done, total ->
+                                val received = AirBridgeProtocol.receive(this, socket) { done, total ->
                                     AirBridgeState.update { AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat() }
                                 }
                                 socket.getOutputStream().write(0x06)
@@ -97,7 +99,9 @@ class NetworkTransferService : Service() {
                                 AirBridgeState.update {
                                     AirBridgeState.transferActive = false
                                     AirBridgeState.transferProgress = 1f
-                                    AirBridgeState.lastReceived = "Received $name in Downloads/AirBridge"
+                                    AirBridgeState.lastReceived = "Received ${received.name} in Downloads/AirBridge"
+                                    AirBridgeState.receivedTextName = if (received.textContent != null) received.name else ""
+                                    AirBridgeState.receivedTextContent = received.textContent
                                     AirBridgeState.status = AirBridgeState.lastReceived
                                 }
                             } catch (failure: Throwable) {

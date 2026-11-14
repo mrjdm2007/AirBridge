@@ -1,6 +1,8 @@
 package com.airbridge.app
 
 import android.content.Intent
+import android.content.ClipboardManager
+import android.content.ClipData
 import android.content.ContentValues
 import android.provider.MediaStore
 import android.os.Environment
@@ -206,6 +208,25 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                                 OutlinedButton(onClick = { AirBridgeState.pendingUris = emptyList() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Cancel", fontSize = 11.sp) }
                                 Button(onClick = { AirBridgeState.peers.firstOrNull()?.let(onSend) }, enabled = AirBridgeState.peers.isNotEmpty() && !AirBridgeState.transferActive, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(10.dp)) {
                                     Icon(Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Send", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                        if (AirBridgeState.receivedTextContent != null) {
+                            Row(
+                                Modifier.fillMaxWidth().background(Paper, RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(AirBridgeState.receivedTextName, color = Ink, fontSize = 10.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                                    Text("Text received · ready to copy", color = Muted, fontSize = 9.sp)
+                                }
+                                TextButton(onClick = {
+                                    val clipboard = context.getSystemService(ClipboardManager::class.java)
+                                    clipboard.setPrimaryClip(ClipData.newPlainText("AirBridge text", AirBridgeState.receivedTextContent))
+                                }) {
+                                    Icon(Icons.Rounded.ContentPaste, contentDescription = null, modifier = Modifier.size(15.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Copy", fontSize = 11.sp)
                                 }
                             }
                         }
