@@ -160,6 +160,7 @@ class NetworkTransferService : Service() {
                             val peer = AirBridgePeer("MacBook Air M1", host, serviceInfo.port)
                             AirBridgeState.update {
                                 if (AirBridgeState.peers.none { it.host == peer.host && it.port == peer.port }) AirBridgeState.peers.add(peer)
+                                publishMacShareShortcut()
                             }
                         }
                     })
