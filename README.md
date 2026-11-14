@@ -15,6 +15,8 @@ Implemented in the current source:
 - SHA-256 file-integrity verification.
 - Received files saved to `Downloads/AirBridge` on both platforms.
 - Mac-side libmtp command integration for USB file listing, upload and download.
+- Dark appearance by default on Android and macOS.
+- Android adaptive launcher icon and macOS app icon generated during packaging.
 
 ## Important limitations — not a release yet
 
