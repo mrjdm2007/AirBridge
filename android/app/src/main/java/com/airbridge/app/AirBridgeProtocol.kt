@@ -18,7 +18,7 @@ object AirBridgeProtocol {
     private val magic = byteArrayOf(0x41, 0x42, 0x52, 0x31) // ABR1
     private const val MAX_TRANSFER_BYTES = 20L * 1024L * 1024L * 1024L
 
-    fun receive(context: Context, socket: Socket): String {
+    fun receive(context: Context, socket: Socket, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
         socket.soTimeout = 120_000
         val input = DataInputStream(socket.getInputStream())
         val signature = ByteArray(4)
@@ -46,6 +46,7 @@ object AirBridgeProtocol {
                     output.write(buffer, 0, count)
                     digest.update(buffer, 0, count)
                     remaining -= count
+                    onProgress(fileSize - remaining, fileSize)
                 }
             }
             require(MessageDigest.isEqual(expectedHash, digest.digest())) { "File integrity check failed (SHA-256)." }
@@ -56,7 +57,7 @@ object AirBridgeProtocol {
         }
     }
 
-    fun send(context: Context, uri: Uri, address: InetAddress, port: Int): String {
+    fun send(context: Context, uri: Uri, address: InetAddress, port: Int, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
         val resolver = context.contentResolver
         val name = safeName(queryName(context, uri) ?: "AirBridge-file")
         val temp = File(context.cacheDir, "outgoing-${System.nanoTime()}.part")
@@ -95,7 +96,17 @@ object AirBridgeProtocol {
                 output.writeLong(temp.length())
                 output.write(hash)
                 output.write(nameBytes)
-                temp.inputStream().use { it.copyTo(output, 64 * 1024) }
+                temp.inputStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    var sent = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        sent += count
+                        onProgress(sent, temp.length())
+                    }
+                }
                 output.flush()
                 require(socket.getInputStream().read() == 0x06) { "The receiving device did not confirm the file." }
             }

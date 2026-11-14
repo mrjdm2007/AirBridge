@@ -25,6 +25,9 @@ object AirBridgeState {
     val peers = androidx.compose.runtime.mutableStateListOf<AirBridgePeer>()
     var status by androidx.compose.runtime.mutableStateOf("Starting local discovery…")
     var lastReceived by androidx.compose.runtime.mutableStateOf("")
+    var transferProgress by androidx.compose.runtime.mutableFloatStateOf(0f)
+    var transferActive by androidx.compose.runtime.mutableStateOf(false)
+    var transferLabel by androidx.compose.runtime.mutableStateOf("")
     var pendingUris by androidx.compose.runtime.mutableStateOf<List<android.net.Uri>>(emptyList())
     private val main = Handler(Looper.getMainLooper())
     fun update(block: () -> Unit) { main.post { block() } }
@@ -80,15 +83,20 @@ class NetworkTransferService : Service() {
                         client.use { socket ->
                             try {
                                 socket.soTimeout = 120_000
-                                val name = AirBridgeProtocol.receive(this, socket)
+                                AirBridgeState.update { AirBridgeState.transferActive = true; AirBridgeState.transferProgress = 0f; AirBridgeState.transferLabel = "Receiving file" }
+                                val name = AirBridgeProtocol.receive(this, socket) { done, total ->
+                                    AirBridgeState.update { AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat() }
+                                }
                                 socket.getOutputStream().write(0x06)
                                 socket.getOutputStream().flush()
                                 AirBridgeState.update {
+                                    AirBridgeState.transferActive = false
+                                    AirBridgeState.transferProgress = 1f
                                     AirBridgeState.lastReceived = "Received $name in Downloads/AirBridge"
                                     AirBridgeState.status = AirBridgeState.lastReceived
                                 }
                             } catch (failure: Throwable) {
-                                AirBridgeState.update { AirBridgeState.status = failure.localizedMessage ?: "Transfer failed" }
+                                AirBridgeState.update { AirBridgeState.transferActive = false; AirBridgeState.status = failure.localizedMessage ?: "Transfer failed" }
                             } finally {
                                 receiveSlots.release()
                             }
