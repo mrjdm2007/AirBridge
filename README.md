@@ -1,12 +1,12 @@
 # AirBridge
 
-AirBridge is a native Android ↔ macOS direct-transfer project. Its goal is private local sharing without accounts, cloud storage, or a relay.
+AirBridge is a native Android ↔ macOS direct-transfer project. It is designed for local file sharing without accounts, cloud storage, or a relay.
 
 ## Current implementation snapshot
 
-This repository is an **experimental development build**, not a finished release.
+This repository is still an **experimental development build**, not a finished secure release.
 
-Implemented in the current source:
+Implemented in the source:
 - Android LAN service advertisement and Bonjour/NSD discovery.
 - Mac Bonjour discovery and a TCP receive listener.
 - Android share-sheet entry for one or multiple files.
@@ -16,19 +16,25 @@ Implemented in the current source:
 - Received files saved to `Downloads/AirBridge` on both platforms.
 - Mac-side libmtp command integration for USB file listing, upload and download.
 
+The `hardening/reliable-transfers` branch contains additional transfer hardening and progress/history work. It remains a draft because the security protocol and real-device validation are incomplete.
+
 ## Important limitations — not a release yet
 
 - **Pairing, authentication and transport encryption are not implemented.** Do not use this prototype on an untrusted network or for sensitive files.
-- Wi-Fi transfers have not yet been verified between the actual Moto Edge 50 Neo and MacBook.
-- Mac build and MTP hardware operation have not been verified; the macOS Actions jobs have been cancelled before producing an artifact.
-- MTP currently requires Homebrew libmtp tools and manual USB File Transfer mode selection; automatic USB detection is not implemented.
-- Clipboard synchronization is not implemented.
-- Transfer resume, user-facing progress/cancellation, robust reconnect and extensive error recovery are not implemented.
-- Mac drag-and-drop sending and trusted-device persistence are not yet implemented.
+- Wi-Fi transfers and USB MTP have not yet been validated on the actual Moto Edge 50 Neo and MacBook hardware.
+- MTP requires Homebrew libmtp tools and manual USB File Transfer mode selection; automatic USB detection is not implemented.
+- Transfer resume, robust reconnect, folder transfer, Mac drag-and-drop and clipboard synchronization are not implemented in the main branch.
+- CI builds prove compilation and packaging only; they do not prove secure or reliable device-to-device operation.
 
-## Feature roadmap
+See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) for the remaining release blockers and planned features.
 
-See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) for the prioritized plan covering secure pairing, encrypted transfers, resumable queues, folder sharing, drag-and-drop, opt-in clipboard sync, transfer history and advanced options. These are planned features, not claims about the current prototype.
+## Download both apps from one Actions run
+
+The combined workflow builds both platforms in the same run:
+- **AirBridge-Android-APK** — Android debug APK.
+- **AirBridge-macOS-App** — macOS app ZIP.
+
+Open [AirBridge — Android + macOS builds](https://github.com/mrjdm2007/AirBridge/actions/workflows/build-all.yml), open the latest successful run on the `main` branch, then download both files from its **Artifacts** section. Artifacts are temporary CI downloads, not a signed public release.
 
 ## Wi-Fi setup for development testing
 
@@ -48,9 +54,9 @@ brew install libmtp
 
 Unlock the phone, connect a data-capable USB cable, select **File transfer / Android Auto** on the phone, and press Refresh in the Mac app.
 
-## Build
+## Build locally
 
 - Android: see [android/README.md](android/README.md).
 - macOS: see [macos/README.md](macos/README.md).
 
-CI status is not a substitute for hardware testing. Do not treat an unverified build as a completed release.
+Do not treat an unverified CI build as a completed release.
