@@ -45,143 +45,36 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleShare(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND) {
-            val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
-            if (uri != null) { AirBridgeState.pendingUris = listOf(uri); AirBridgeState.directShareRequested = true }
-        } else if (intent?.action == Intent.ACTION_SEND_MULTIPLE) {
-            @Suppress("DEPRECATION")
-            val uris = if (android.os.Build.VERSION.SDK_INT >= 33)
+        if (intent?.action != Intent.ACTION_SEND && intent?.action != Intent.ACTION_SEND_MULTIPLE) return
+        val uris = mutableListOf<android.net.Uri>()
+        if (intent.action == Intent.ACTION_SEND) {
+            val stream = if (android.os.Build.VERSION.SDK_INT >= 33)
+                intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+            else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            }
+            if (stream != null) uris.add(stream)
+        } else {
+            val streams = if (android.os.Build.VERSION.SDK_INT >= 33)
                 intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
-            else intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-            if (uris != null) { AirBridgeState.pendingUris = uris; AirBridgeState.directShareRequested = true }
+            else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableArrayListExtra<android.net.Uri>(Intent.EXTRA_STREAM)
+            }
+            streams?.let { uris.addAll(it) }
         }
-    }
-
-    private fun sendPending(peer: AirBridgePeer) {
-        val uris = AirBridgeState.pendingUris
         if (uris.isEmpty()) {
-            AirBridgeState.status = "Share a file to AirBridge first."
-            return
-        }
-        Thread(Runnable {
-            try {
-                uris.forEach { uri ->
-                    AirBridgeProtocol.send(this, uri, InetAddress.getByName(peer.host), peer.port) { done, total ->
-                        AirBridgeState.update { AirBridgeState.transferActive = true; AirBridgeState.transferLabel = "Sending file"; AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat() }
-                    }
+            val clip = intent.clipData
+            if (clip != null) {
+                for (index in 0 until clip.itemCount) {
+                    clip.getItemAt(index).uri?.let { uris.add(it) }
                 }
-                AirBridgeState.update {
-                    AirBridgeState.transferActive = false
-                    AirBridgeState.transferProgress = 1f
-                    AirBridgeState.status = "Sent ${uris.size} file(s) to ${peer.name}"
-                    AirBridgeState.pendingUris = emptyList()
-                }
-            } catch (failure: Throwable) {
-                AirBridgeState.update { AirBridgeState.transferActive = false; AirBridgeState.status = failure.localizedMessage ?: "Send failed" }
             }
-        }).start()
+        }
+        if (uris.isNotEmpty()) {
+            AirBridgeState.pendingUris = uris.distinct()
+            AirBridgeState.directShareRequested = true
+        }
     }
-}
 
-@Composable
-private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
-    var clipboardSync by remember { mutableStateOf(false) }
-    var selectedMode by remember { mutableStateOf("Wireless") }
-    MaterialTheme(colorScheme = darkColorScheme(background = Paper, surface = Card, primary = Color(0xFFF4F4F2), onPrimary = Color(0xFF101010), onSurface = Ink, onBackground = Ink)) {
-        Surface(Modifier.fillMaxSize(), color = Paper) {
-            Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 26.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("AirBridge", fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                        Text("Moto Edge 50 Neo ↔ MacBook Air M1", fontSize = 12.sp, color = Muted)
-                    }
-                    Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(27.dp))
-                }
-                Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("Wireless", "Wired").forEach { mode ->
-                        val selected = selectedMode == mode
-                        Button(
-                            onClick = { selectedMode = mode },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (selected) Ink else Card,
-                                contentColor = if (selected) Paper else Muted
-                            )
-                        ) { Text(if (mode == "Wireless") "Wireless · Wi-Fi" else "Wired · USB") }
-                    }
-                }
-                if (selectedMode == "Wireless") {
-                Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(20.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("CONNECTION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
-                    Text(AirBridgeState.status, color = Ink, fontSize = 13.sp)
-                    if (AirBridgeState.transferActive) {
-                        Text(AirBridgeState.transferLabel, color = Muted, fontSize = 11.sp)
-                        LinearProgressIndicator(progress = { AirBridgeState.transferProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Ink, trackColor = Paper)
-                        Text("${(AirBridgeState.transferProgress * 100).toInt()}%", color = Muted, fontSize = 10.sp)
-                    }
-                    if (AirBridgeState.pendingUris.isNotEmpty()) {
-                        Text("${AirBridgeState.pendingUris.size} shared file(s) ready to send", color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-                Text("YOUR MACBOOK AIR M1", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
-                val macPeer = AirBridgeState.peers.firstOrNull()
-                if (macPeer == null) {
-                    Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Muted, modifier = Modifier.size(28.dp))
-                        Text("Looking for your MacBook Air M1…", color = Ink, fontWeight = FontWeight.Medium)
-                        Text("Connect your MacBook Air M1 to this phone’s hotspot.", color = Muted, fontSize = 11.sp)
-                    }
-                } else {
-                    Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink)
-                        Spacer(Modifier.width(12.dp))
-                        Text("MacBook Air M1", color = Ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Button(onClick = { onSend(macPeer) }, enabled = AirBridgeState.pendingUris.isNotEmpty()) {
-                            Icon(Icons.Rounded.Send, contentDescription = null)
-                            Spacer(Modifier.width(5.dp))
-                            Text("Send")
-                        }
-                    }
-                }
-                Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = Ink)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Clipboard sync", color = Ink, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                        Text("Not implemented yet", color = Muted, fontSize = 10.sp)
-                    }
-                    Switch(checked = clipboardSync, onCheckedChange = { clipboardSync = it }, enabled = false)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.FolderOpen, tint = Muted, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(7.dp))
-                    Text("Received files are saved to Downloads/AirBridge", color = Muted, fontSize = 10.sp)
-                }
-                Spacer(Modifier.weight(1f, fill = false))
-                } else {
-                    Column(
-                        Modifier.fillMaxWidth().background(Card, RoundedCornerShape(20.dp)).padding(22.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(34.dp))
-                        Text("USB file transfer", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Connect your phone to your Mac with a data-capable USB cable. Unlock the phone and choose File transfer / Android Auto in the USB notification.",
-                            color = Muted, fontSize = 12.sp
-                        )
-                        Text(
-                            "Open AirBridge on your Mac and choose Wired USB to browse phone storage and transfer files. The Mac uses MTP; ADB is not required.",
-                            color = Muted, fontSize = 12.sp
-                        )
-                        Text("Keep the phone unlocked while browsing.", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-                Text(
-                    if (selectedMode == "Wireless") "LOCAL NETWORK · SHA-256 INTEGRITY · NOT ENCRYPTED" else "USB MTP · NO ADB",
-                    color = Muted, fontSize = 9.sp, letterSpacing = 1.sp
-                )
-            }
-        }
-    }
-}
