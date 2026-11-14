@@ -16,15 +16,19 @@ import java.security.MessageDigest
 
 object AirBridgeProtocol {
     private val magic = byteArrayOf(0x41, 0x42, 0x52, 0x31) // ABR1
+    private const val MAX_TRANSFER_BYTES = 20L * 1024L * 1024L * 1024L
 
-    fun receive(context: Context, socket: Socket): String {
+    fun receive(context: Context, socket: Socket, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
+        socket.soTimeout = 120_000
         val input = DataInputStream(socket.getInputStream())
         val signature = ByteArray(4)
         input.readFully(signature)
         require(signature.contentEquals(magic)) { "Unrecognized AirBridge transfer." }
         val nameLength = input.readInt()
         val fileSize = input.readLong()
-        require(nameLength in 1..1024 && fileSize >= 0) { "Invalid transfer header." }
+        require(nameLength in 1..1024 && fileSize in 0..MAX_TRANSFER_BYTES) { "Invalid transfer header or file exceeds the 20 GiB limit." }
+        val available = context.cacheDir.usableSpace
+        require(fileSize <= available) { "Not enough temporary storage to receive this file." }
         val expectedHash = ByteArray(32)
         input.readFully(expectedHash)
         val rawName = ByteArray(nameLength)
@@ -42,6 +46,7 @@ object AirBridgeProtocol {
                     output.write(buffer, 0, count)
                     digest.update(buffer, 0, count)
                     remaining -= count
+                    onProgress(fileSize - remaining, fileSize)
                 }
             }
             require(MessageDigest.isEqual(expectedHash, digest.digest())) { "File integrity check failed (SHA-256)." }
@@ -52,14 +57,24 @@ object AirBridgeProtocol {
         }
     }
 
-    fun send(context: Context, uri: Uri, address: InetAddress, port: Int): String {
+    fun send(context: Context, uri: Uri, address: InetAddress, port: Int, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
         val resolver = context.contentResolver
         val name = safeName(queryName(context, uri) ?: "AirBridge-file")
         val temp = File(context.cacheDir, "outgoing-${System.nanoTime()}.part")
         try {
             resolver.openInputStream(uri).use { source ->
                 requireNotNull(source) { "Cannot open the selected file." }
-                FileOutputStream(temp).use { target -> source.copyTo(target) }
+                FileOutputStream(temp).use { target ->
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= MAX_TRANSFER_BYTES) { "Files larger than 20 GiB are not supported." }
+                        target.write(buffer, 0, count)
+                    }
+                }
             }
             val digest = MessageDigest.getInstance("SHA-256")
             val hash = temp.inputStream().use { stream ->
@@ -71,7 +86,8 @@ object AirBridgeProtocol {
                 }
                 digest.digest()
             }
-            Socket(address, port).use { socket ->
+            Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(address, port), 15_000)
                 socket.soTimeout = 120_000
                 val output = DataOutputStream(socket.getOutputStream())
                 val nameBytes = name.toByteArray(Charsets.UTF_8)
@@ -80,7 +96,17 @@ object AirBridgeProtocol {
                 output.writeLong(temp.length())
                 output.write(hash)
                 output.write(nameBytes)
-                temp.inputStream().use { it.copyTo(output, 64 * 1024) }
+                temp.inputStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    var sent = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        output.write(buffer, 0, count)
+                        sent += count
+                        onProgress(sent, temp.length())
+                    }
+                }
                 output.flush()
                 require(socket.getInputStream().read() == 0x06) { "The receiving device did not confirm the file." }
             }
@@ -100,8 +126,22 @@ object AirBridgeProtocol {
         val clean = value.substringAfterLast('/').substringAfterLast('\\')
             .replace(Regex("[\\u0000-\\u001F]"), "_")
             .replace(Regex("[<>:\"|?*]"), "_")
-            .trim().take(180)
-        return clean.ifBlank { "AirBridge-file" }
+            .trim().trim('.').take(180)
+        return clean.takeUnless { it.isBlank() || it == "." || it == ".." } ?: "AirBridge-file"
+    }
+
+    private fun uniqueDestination(directory: File, name: String): File {
+        val original = File(directory, name)
+        if (!original.exists()) return original
+        val base = original.nameWithoutExtension
+        val extension = original.extension
+        var index = 1
+        while (true) {
+            val candidateName = if (extension.isEmpty()) "$base ($index)" else "$base ($index).$extension"
+            val candidate = File(directory, candidateName)
+            if (!candidate.exists()) return candidate
+            index++
+        }
     }
 
     private fun saveToDownloads(context: Context, source: File, name: String) {
@@ -128,7 +168,8 @@ object AirBridgeProtocol {
         } else {
             val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "AirBridge")
             check(directory.mkdirs() || directory.isDirectory)
-            source.copyTo(File(directory, name), overwrite = true)
+            val destination = uniqueDestination(directory, name)
+            source.copyTo(destination, overwrite = false)
         }
     }
 }

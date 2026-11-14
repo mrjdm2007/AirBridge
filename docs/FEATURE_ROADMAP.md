@@ -1,13 +1,20 @@
 # AirBridge Feature Roadmap
 
-This roadmap separates release-critical work from optional convenience features. Items in this document are planned, not implemented, unless explicitly marked otherwise.
+This roadmap separates release-critical work from optional convenience features. Status below reflects code present on `hardening/reliable-transfers`; successful CI builds do not replace real-device validation.
+
+## Current implementation notes
+
+- Implemented: Android and macOS LAN file transfers, Bonjour/NSD discovery, SHA-256 integrity verification, Android share-sheet sending, multi-selection sending, macOS MTP listing/upload/download through libmtp, Android and macOS send progress, macOS persistent Wi-Fi transfer history, macOS outgoing-transfer cancellation, and periodic MTP connection polling.
+- Partially implemented: transfer management (progress and a basic Mac history only), USB/MTP (manual refresh plus periodic polling; actual device/phone compatibility still needs testing), cancellation (macOS outgoing LAN sends only).
+- Not implemented: authenticated pairing, encrypted LAN transport, resumable transfers, speed/ETA, searchable cross-platform history, clipboard sync, robust folder transfers, and trusted-device management.
+- Security warning: the current ABR1 LAN protocol is plaintext and unauthenticated. Use only on a trusted local network; do not transfer sensitive files until authenticated encryption is implemented.
 
 ## P0 — Required before everyday use
 
 - [ ] **Authenticated device pairing** — show a short-lived pairing code/QR on the receiving device; require explicit approval on first connection; remember trusted devices with a revoke option.
 - [ ] **Encrypted transport** — use TLS with per-device identity keys established during pairing. Reject unknown or changed identities and never silently fall back to plaintext.
 - [ ] **Transfer queue** — queue multiple files, show per-file and aggregate progress, speed, ETA, and clear success/failure states.
-- [ ] **Cancel and safe cleanup** — cancellation must close sockets and remove incomplete temporary files without touching completed files.
+- [ ] **Cancel and safe cleanup** — macOS outgoing LAN send cancellation is implemented; Android sends, incoming transfers and MTP cancellation still need cancellation controls and cleanup tests.
 - [ ] **Resumable transfers** — persist transfer ID, file size, modification metadata and verified chunk offsets; revalidate the source and destination before resuming.
 - [ ] **Reliable background transfers** — Android foreground-service notification while active; macOS menu-bar/background operation with explicit status.
 - [ ] **End-to-end verification** — retain SHA-256 verification and add tests for truncated, reordered, duplicate and corrupted chunks.
@@ -18,9 +25,9 @@ This roadmap separates release-critical work from optional convenience features.
 - [ ] **Folder and multi-file transfer** — preserve directory structure, handle name collisions, and let users choose whether to replace, keep both, or skip.
 - [ ] **Mac drag-and-drop** — drop files or folders onto the app/device row to send.
 - [ ] **Clipboard sync** — opt-in text-only clipboard sharing between paired devices, with a visible pause switch and loop prevention. Never sync silently before pairing.
-- [ ] **Transfer history** — searchable history with filename, direction, device, timestamp, size and result; allow clearing history.
+- [ ] **Transfer history** — macOS now stores the last 100 successful Wi-Fi transfers and supports clearing; searchable history, failures, Android and MTP entries remain.
 - [ ] **Trusted-device manager** — rename devices, set favorites, inspect last-seen time and revoke trust.
-- [ ] **Automatic device reconnect** — reconnect only to previously paired devices and require user approval for new devices.
+- [ ] **Automatic device reconnect** — MTP connection state is polled on macOS; trusted Wi-Fi device reconnect is not implemented.
 - [ ] **Notifications and quick actions** — show completion/failure notifications and provide open/reveal/retry actions.
 - [ ] **Storage destination controls** — choose Mac destination and Android destination; show available space before large transfers.
 - [ ] **Collision-safe naming** — deterministic “keep both” names and atomic final-file rename after verification.

@@ -31,7 +31,7 @@ struct AirBridgePopover: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("AirBridge").font(.system(size: 23, weight: .semibold))
-                    Text("Private transfers between your Mac and Android")
+                    Text("Direct transfers between your Mac and Android")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -45,6 +45,12 @@ struct AirBridgePopover: View {
                         .font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
                     Spacer()
                     Text(lan.status).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    if lan.isTransferring {
+                        ProgressView(value: lan.progress)
+                        Text("\(Int(lan.progress * 100))% sent").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        Button("Cancel") { lan.cancelTransfer() }
+                            .font(.system(size: 9)).disabled(!lan.canCancelTransfer)
+                    }
                 }
                 if lan.peers.isEmpty {
                     Text("Waiting for your Android device on the same local network.")
@@ -186,6 +192,32 @@ struct AirBridgePopover: View {
 
             Divider()
 
+            HStack {
+                Text("RECENT WI-FI TRANSFERS")
+                    .font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                Spacer()
+                Button("Clear") { lan.clearHistory() }
+                    .font(.system(size: 10)).disabled(lan.history.isEmpty)
+            }
+            if lan.history.isEmpty {
+                Text("Completed Wi-Fi transfers will appear here.")
+                    .font(.system(size: 10)).foregroundStyle(.secondary)
+            } else {
+                ForEach(lan.history.prefix(4)) { item in
+                    HStack(spacing: 8) {
+                        Image(systemName: item.direction == "Sent" ? "arrow.up.circle" : "arrow.down.circle")
+                            .foregroundColor(item.succeeded ? Color.secondary : Color.red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.filename).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                            Text("\(item.direction) · \(item.peer) · \(ByteCountFormatter.string(fromByteCount: Int64(clamping: item.bytes), countStyle: .file)) · \(item.date.formatted(date: .abbreviated, time: .shortened))")
+                                .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(.green)
+                    }
+                }
+            }
+
             Toggle(isOn: $clipboardEnabled) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Clipboard sync").font(.system(size: 12, weight: .medium))
@@ -197,7 +229,7 @@ struct AirBridgePopover: View {
             .disabled(true)
 
             HStack {
-                Text("PRIVATE BY DESIGN")
+                Text("LOCAL NETWORK · NOT ENCRYPTED")
                 Spacer()
                 Text("USB MTP · NO ADB")
             }
@@ -205,7 +237,7 @@ struct AirBridgePopover: View {
             .tracking(0.8).foregroundStyle(.tertiary)
         }
         .padding(18)
-        .frame(width: 480, height: 570)
+        .frame(width: 480, height: 650)
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): mtp.upload(urls)
@@ -222,6 +254,16 @@ struct AirBridgePopover: View {
         .onAppear {
             mtp.refresh()
             lan.start()
+        }
+        .task {
+            // MTP has no portable hot-plug notification API through libmtp's CLI.
+            // Poll gently so connecting/unlocking the phone is detected without a manual refresh.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                if !Task.isCancelled && !mtp.isTransferring && !mtp.isLoading {
+                    mtp.refresh()
+                }
+            }
         }
     }
 }

@@ -52,11 +52,15 @@ enum MTPService {
     private static func run(_ name: String, _ arguments: [String]) throws -> String {
         let executable = try tool(name)
         let process = Process()
-        let output = Pipe()
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("airbridge-mtp-\(UUID().uuidString).log")
+        guard FileManager.default.createFile(atPath: outputURL.path, contents: nil), let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
+            throw MTPError.commandFailed("Could not prepare MTP command output.")
+        }
+        defer { try? outputHandle.close(); try? FileManager.default.removeItem(at: outputURL) }
         process.executableURL = executable
         process.arguments = arguments
-        process.standardOutput = output
-        process.standardError = output
+        process.standardOutput = outputHandle
+        process.standardError = outputHandle
         process.environment = [
             "PATH": searchPaths.joined(separator: ":"),
             "HOME": FileManager.default.homeDirectoryForCurrentUser.path
@@ -66,8 +70,15 @@ enum MTPService {
         } catch {
             throw MTPError.commandFailed("Could not start \(name): \(error.localizedDescription)")
         }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        let deadline = Date().addingTimeInterval(180)
+        while process.isRunning && Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
+        if process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+            throw MTPError.commandFailed("\(name) timed out. Check the USB connection and try again.")
+        }
+        try? outputHandle.synchronize()
+        let data = (try? Data(contentsOf: outputURL)) ?? Data()
         let text = String(data: data, encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else {
             throw MTPError.commandFailed(text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -136,6 +147,16 @@ enum MTPService {
     }
 
     static func download(_ file: MTPFile, to destination: URL) throws {
-        _ = try run("mtp-getfile", [String(file.id), destination.path])
+        guard !FileManager.default.fileExists(atPath: destination.path) else {
+            throw MTPError.commandFailed("A file already exists at the selected destination. Choose another name to avoid overwriting it.")
+        }
+        let temporary = destination.deletingLastPathComponent()
+            .appendingPathComponent(".\(destination.lastPathComponent).airbridge-\(UUID().uuidString).part")
+        defer { try? FileManager.default.removeItem(at: temporary) }
+        _ = try run("mtp-getfile", [String(file.id), temporary.path])
+        guard FileManager.default.fileExists(atPath: temporary.path) else {
+            throw MTPError.commandFailed("MTP reported success but no downloaded file was created.")
+        }
+        try FileManager.default.moveItem(at: temporary, to: destination)
     }
 }

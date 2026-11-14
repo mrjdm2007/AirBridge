@@ -65,14 +65,18 @@ class MainActivity : ComponentActivity() {
         Thread(Runnable {
             try {
                 uris.forEach { uri ->
-                    AirBridgeProtocol.send(this, uri, InetAddress.getByName(peer.host), peer.port)
+                    AirBridgeProtocol.send(this, uri, InetAddress.getByName(peer.host), peer.port) { done, total ->
+                        AirBridgeState.update { AirBridgeState.transferActive = true; AirBridgeState.transferLabel = "Sending file"; AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat() }
+                    }
                 }
                 AirBridgeState.update {
+                    AirBridgeState.transferActive = false
+                    AirBridgeState.transferProgress = 1f
                     AirBridgeState.status = "Sent ${uris.size} file(s) to ${peer.name}"
                     AirBridgeState.pendingUris = emptyList()
                 }
             } catch (failure: Throwable) {
-                AirBridgeState.update { AirBridgeState.status = failure.localizedMessage ?: "Send failed" }
+                AirBridgeState.update { AirBridgeState.transferActive = false; AirBridgeState.status = failure.localizedMessage ?: "Send failed" }
             }
         }).start()
     }
@@ -87,13 +91,18 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AirBridge", fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                        Text("Private transfers on your local network", fontSize = 12.sp, color = Muted)
+                        Text("Direct transfers on your local network", fontSize = 12.sp, color = Muted)
                     }
                     Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(27.dp))
                 }
                 Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(20.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("CONNECTION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
                     Text(AirBridgeState.status, color = Ink, fontSize = 13.sp)
+                    if (AirBridgeState.transferActive) {
+                        Text(AirBridgeState.transferLabel, color = Muted, fontSize = 11.sp)
+                        LinearProgressIndicator(progress = { AirBridgeState.transferProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Ink, trackColor = Paper)
+                        Text("${(AirBridgeState.transferProgress * 100).toInt()}%", color = Muted, fontSize = 10.sp)
+                    }
                     if (AirBridgeState.pendingUris.isNotEmpty()) {
                         Text("${AirBridgeState.pendingUris.size} shared file(s) ready to send", color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     }
@@ -129,7 +138,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Clipboard sync", color = Ink, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                        Text("Requires foreground approval; not active yet", color = Muted, fontSize = 10.sp)
+                        Text("Not implemented yet", color = Muted, fontSize = 10.sp)
                     }
                     Switch(checked = clipboardSync, onCheckedChange = { clipboardSync = it }, enabled = false)
                 }
@@ -139,7 +148,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                     Text("Received files are saved to Downloads/AirBridge", color = Muted, fontSize = 10.sp)
                 }
                 Spacer(Modifier.weight(1f, fill = false))
-                Text("DIRECT · LOCAL NETWORK · SHA-256 CHECKED", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
+                Text("LOCAL NETWORK · SHA-256 INTEGRITY · NOT ENCRYPTED", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
             }
         }
     }

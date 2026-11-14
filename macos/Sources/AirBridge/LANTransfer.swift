@@ -8,15 +8,52 @@ struct LANPeer: Identifiable {
     let endpoint: NWEndpoint
 }
 
+struct TransferHistoryEntry: Identifiable, Codable {
+    let id: UUID
+    let filename: String
+    let direction: String
+    let peer: String
+    let bytes: UInt64
+    let date: Date
+    let succeeded: Bool
+}
+
 @MainActor
 final class LANTransferController: ObservableObject {
     @Published private(set) var peers: [LANPeer] = []
     @Published var status = "Starting local network discovery…"
     @Published var error: String?
+    @Published private(set) var progress: Double = 0
+    @Published private(set) var isTransferring = false
+    @Published private(set) var history: [TransferHistoryEntry] = []
+    @Published private(set) var canCancelTransfer = false
+    private var activeConnection = LockedBox<NWConnection?>(nil)
+    private let cancellation = LockedBox(false)
 
+    private let historyKey = "airbridge.lan.transfer-history.v1"
     private let queue = DispatchQueue(label: "com.airbridge.lan", qos: .userInitiated)
     private var browser: NWBrowser?
     private var listener: NWListener?
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: historyKey),
+           let saved = try? JSONDecoder().decode([TransferHistoryEntry].self, from: data) {
+            history = saved
+        }
+    }
+
+    private func record(_ entry: TransferHistoryEntry) {
+        history.insert(entry, at: 0)
+        history = Array(history.prefix(100))
+        if let data = try? JSONEncoder().encode(history) {
+            UserDefaults.standard.set(data, forKey: historyKey)
+        }
+    }
+
+    func clearHistory() {
+        history = []
+        UserDefaults.standard.removeObject(forKey: historyKey)
+    }
 
     func start() {
         startListener()
@@ -34,7 +71,7 @@ final class LANTransferController: ObservableObject {
             )
             listener.newConnectionHandler = { [weak self] connection in
                 connection.start(queue: self?.queue ?? .global())
-                self?.receive(on: connection, buffer: Data(), parser: IncomingParser())
+                Task { @MainActor in self?.receive(on: connection, parser: IncomingParser()) }
             }
             listener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
@@ -75,25 +112,57 @@ final class LANTransferController: ObservableObject {
     func send(_ file: URL, to peer: LANPeer) {
         status = "Sending \(file.lastPathComponent)…"
         error = nil
+        progress = 0
+        isTransferring = true
+        canCancelTransfer = true
+        cancellation.set(false)
+        let connectionBox = activeConnection
+        let cancellationFlag = cancellation
+        let transferQueue = queue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let accessed = file.startAccessingSecurityScopedResource()
+            defer { if accessed { file.stopAccessingSecurityScopedResource() } }
             do {
-                try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global())
-                Task { @MainActor in self?.status = "Sent \(file.lastPathComponent) to \(peer.id)" }
+                try Self.sendFile(file, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
+                    Task { @MainActor [weak self] in self?.progress = total == 0 ? 1 : Double(sent) / Double(total) }
+                }
+                Task { @MainActor in
+                    self?.progress = 1
+                    self?.isTransferring = false
+                    self?.canCancelTransfer = false
+                    self?.status = "Sent \(file.lastPathComponent) to \(peer.id)"
+                    let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.uint64Value ?? 0
+                    self?.record(TransferHistoryEntry(id: UUID(), filename: file.lastPathComponent, direction: "Sent", peer: peer.id, bytes: size, date: Date(), succeeded: true))
+                }
             } catch {
-                Task { @MainActor in self?.error = error.localizedDescription }
+                Task { @MainActor in
+                    self?.isTransferring = false
+                    self?.canCancelTransfer = false
+                    if self?.cancellation.get() == true { self?.status = "Transfer cancelled"; self?.error = nil }
+                    else { self?.error = error.localizedDescription }
+                }
             }
         }
     }
 
-    private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue) throws {
+    func cancelTransfer() {
+        guard isTransferring else { return }
+        cancellation.set(true)
+        activeConnection.get()?.cancel()
+        status = "Cancelling transfer…"
+    }
+
+    nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue, connectionBox: LockedBox<NWConnection?>, isCancelled: @escaping @Sendable () -> Bool, onProgress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
         let connection = NWConnection(to: endpoint, using: .tcp)
+        connectionBox.set(connection)
+        defer { connectionBox.set(nil); connection.cancel() }
         let ready = DispatchSemaphore(value: 0)
         let finished = DispatchSemaphore(value: 0)
-        var connectionError: NWError?
+        let connectionError = LockedBox<NWError?>(nil)
         connection.stateUpdateHandler = { state in
             switch state {
             case .ready: ready.signal()
-            case .failed(let error): connectionError = error; ready.signal()
+            case .failed(let error): connectionError.set(error); ready.signal()
             case .cancelled: finished.signal()
             default: break
             }
@@ -103,10 +172,11 @@ final class LANTransferController: ObservableObject {
             connection.cancel()
             throw LANError.timeout
         }
-        if let connectionError { throw connectionError }
+        if let error = connectionError.get() { throw error }
 
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        guard size <= 20 * 1024 * 1024 * 1024 else { throw LANError.fileTooLarge }
         let filename = url.lastPathComponent
         let name = Data(filename.utf8)
         guard !name.isEmpty && name.count <= 1024 else { throw LANError.invalidName }
@@ -128,22 +198,29 @@ final class LANTransferController: ObservableObject {
         try sendData(header, through: connection)
 
         try input.seek(toOffset: 0)
+        var sent: UInt64 = 0
+        onProgress(0, size)
         while true {
+            if isCancelled() { throw LANError.cancelled }
             let chunk = try input.read(upToCount: 256 * 1024) ?? Data()
             if chunk.isEmpty { break }
             try sendData(chunk, through: connection)
+            sent += UInt64(chunk.count)
+            onProgress(sent, size)
         }
         let sendDone = DispatchSemaphore(value: 0)
         connection.send(content: nil, contentContext: .defaultMessage, isComplete: true, completion: .contentProcessed { _ in sendDone.signal() })
-        _ = sendDone.wait(timeout: .now() + 30)
+        guard sendDone.wait(timeout: .now() + 30) == .success else {
+            throw LANError.timeout
+        }
 
         let ack = DispatchSemaphore(value: 0)
-        var acknowledged = false
+        let acknowledged = LockedBox(false)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { data, _, _, _ in
-            acknowledged = data?.first == 0x06
+            acknowledged.set(data?.first == 0x06)
             ack.signal()
         }
-        guard ack.wait(timeout: .now() + 120) == .success, acknowledged else {
+        guard ack.wait(timeout: .now() + 120) == .success, acknowledged.get() else {
             connection.cancel()
             throw LANError.transferRejected
         }
@@ -151,46 +228,52 @@ final class LANTransferController: ObservableObject {
         _ = finished.wait(timeout: .now() + 1)
     }
 
-    private static func sendData(_ data: Data, through connection: NWConnection) throws {
+    nonisolated private static func sendData(_ data: Data, through connection: NWConnection) throws {
         let semaphore = DispatchSemaphore(value: 0)
-        var sendError: NWError?
+        let sendError = LockedBox<NWError?>(nil)
         connection.send(content: data, completion: .contentProcessed { error in
-            sendError = error
+            sendError.set(error)
             semaphore.signal()
         })
         guard semaphore.wait(timeout: .now() + 120) == .success else { throw LANError.timeout }
-        if let sendError { throw sendError }
+        if let error = sendError.get() { throw error }
     }
 
-    private func receive(on connection: NWConnection, buffer: Data, parser: IncomingParser) {
+    private func receive(on connection: NWConnection, parser: IncomingParser) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, complete, error in
             if let data, !data.isEmpty {
                 do {
                     if try parser.consume(data) {
                         connection.send(content: Data([0x06]), completion: .contentProcessed { _ in connection.cancel() })
-                        Task { @MainActor in self?.status = "Received \(parser.filename) in Downloads/AirBridge" }
+                        Task { @MainActor in
+                            self?.status = "Received \(parser.filename) in Downloads/AirBridge"
+                            self?.record(TransferHistoryEntry(id: UUID(), filename: parser.filename, direction: "Received", peer: "Android device", bytes: parser.transferSize, date: Date(), succeeded: true))
+                        }
                         return
                     }
                 } catch {
+                    parser.abort()
                     Task { @MainActor in self?.error = error.localizedDescription }
                     connection.cancel()
                     return
                 }
             }
             if let error {
+                parser.abort()
                 Task { @MainActor in self?.error = "Incoming transfer: \(error.localizedDescription)" }
                 connection.cancel()
             } else if complete {
+                parser.abort()
                 Task { @MainActor in self?.error = "The sender disconnected before the file completed." }
                 connection.cancel()
             } else {
-                self?.receive(on: connection, buffer: Data(), parser: parser)
+                Task { @MainActor in self?.receive(on: connection, parser: parser) }
             }
         }
     }
 }
 
-private final class IncomingParser {
+private final class IncomingParser: @unchecked Sendable {
     private var buffer = Data()
     private var parsedHeader = false
     private var expectedSize: UInt64 = 0
@@ -200,6 +283,7 @@ private final class IncomingParser {
     private var output: FileHandle?
     private var temporaryURL: URL?
     private(set) var filename = "file"
+    var transferSize: UInt64 { expectedSize }
 
     func consume(_ data: Data) throws -> Bool {
         buffer.append(data)
@@ -210,6 +294,8 @@ private final class IncomingParser {
             expectedSize = buffer.readBE(UInt64.self, at: 8)
             expectedDigest = buffer.subdata(in: 16..<48)
             guard (1...1024).contains(nameLength), expectedSize <= 20 * 1024 * 1024 * 1024 else { throw LANError.badHeader }
+            let free = (try? FileManager.default.attributesOfFileSystem(forPath: FileManager.default.temporaryDirectory.path)[.systemFreeSize] as? NSNumber)?.uint64Value ?? 0
+            guard expectedSize <= free else { throw LANError.insufficientStorage }
             guard buffer.count >= 48 + nameLength else { return false }
             filename = Self.safeName(String(data: buffer.subdata(in: 48..<(48 + nameLength)), encoding: .utf8) ?? "file")
             buffer.removeFirst(48 + nameLength)
@@ -230,31 +316,56 @@ private final class IncomingParser {
             written += amount
         }
         guard written == expectedSize else { return false }
+        guard buffer.isEmpty else { throw LANError.badHeader }
         try output?.close()
         output = nil
-        guard Data(hasher.finalize()) == expectedDigest else { throw LANError.integrity }
+        guard Data(hasher.finalize()) == expectedDigest else {
+            cleanup()
+            throw LANError.integrity
+        }
         let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].appendingPathComponent("AirBridge", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let destination = directory.appendingPathComponent(filename)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            let unique = directory.appendingPathComponent("\(destination.deletingPathExtension().lastPathComponent)-\(UUID().uuidString.prefix(8)).\(destination.pathExtension)")
-            try FileManager.default.moveItem(at: temporaryURL!, to: unique)
-        } else {
-            try FileManager.default.moveItem(at: temporaryURL!, to: destination)
-        }
+        let destination = uniqueDestination(in: directory, filename: filename)
+        guard let temporaryURL else { throw LANError.badHeader }
+        try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        self.temporaryURL = nil
         return true
+    }
+
+    func abort() { cleanup() }
+
+    private func cleanup() {
+        try? output?.close()
+        output = nil
+        if let temporaryURL { try? FileManager.default.removeItem(at: temporaryURL) }
+        temporaryURL = nil
+    }
+
+    private func uniqueDestination(in directory: URL, filename: String) -> URL {
+        let original = directory.appendingPathComponent(filename)
+        if !FileManager.default.fileExists(atPath: original.path) { return original }
+        let base = original.deletingPathExtension().lastPathComponent
+        let ext = original.pathExtension
+        var index = 1
+        while true {
+            let candidateName = ext.isEmpty ? "\(base) (\(index))" : "\(base) (\(index)).\(ext)"
+            let candidate = directory.appendingPathComponent(candidateName)
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            index += 1
+        }
     }
 
     private static func safeName(_ input: String) -> String {
         let cleaned = input.replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "\\", with: "_")
             .components(separatedBy: .controlCharacters).joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
         return String(cleaned.prefix(180)).isEmpty ? "AirBridge-file" : String(cleaned.prefix(180))
     }
 }
 
 private enum LANError: LocalizedError {
-    case timeout, invalidName, transferRejected, badHeader, integrity
+    case timeout, invalidName, transferRejected, badHeader, integrity, fileTooLarge, insufficientStorage, cancelled
     var errorDescription: String? {
         switch self {
         case .timeout: return "The network transfer timed out."
@@ -262,8 +373,19 @@ private enum LANError: LocalizedError {
         case .transferRejected: return "The Android device did not confirm the transfer."
         case .badHeader: return "The incoming AirBridge transfer header is invalid."
         case .integrity: return "The received file failed its SHA-256 integrity check."
+        case .fileTooLarge: return "Files larger than 20 GiB are not supported."
+        case .insufficientStorage: return "There is not enough free storage to receive this file."
+        case .cancelled: return "The transfer was cancelled."
         }
     }
+}
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+    init(_ value: Value) { self.value = value }
+    func set(_ newValue: Value) { lock.lock(); defer { lock.unlock() }; value = newValue }
+    func get() -> Value { lock.lock(); defer { lock.unlock() }; return value }
 }
 
 private extension Data {
