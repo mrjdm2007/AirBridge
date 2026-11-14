@@ -61,7 +61,7 @@ class NetworkTransferService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, "airbridge_transfer")
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
             .setContentTitle("AirBridge is ready")
-            .setContentText("Discovering devices on your local network")
+            .setContentText("Looking for your MacBook Air M1 on your phone hotspot")
             .setOngoing(true)
             .build()
         startForeground(77, notification)
@@ -151,13 +151,13 @@ class NetworkTransferService : Service() {
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(type: String) {}
             override fun onServiceFound(info: NsdServiceInfo) {
-                if (info.serviceType.contains("_airbridge._tcp")) {
+                if (info.serviceType.contains("_airbridge._tcp") && info.serviceName == "AirBridge Mac") {
                     nsd.resolveService(info, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
                         override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                             val host = serviceInfo.host?.hostAddress ?: return
                             if (host.contains(":")) return
-                            val peer = AirBridgePeer(serviceInfo.serviceName, host, serviceInfo.port)
+                            val peer = AirBridgePeer("MacBook Air M1", host, serviceInfo.port)
                             AirBridgeState.update {
                                 if (AirBridgeState.peers.none { it.host == peer.host && it.port == peer.port }) AirBridgeState.peers.add(peer)
                             }
