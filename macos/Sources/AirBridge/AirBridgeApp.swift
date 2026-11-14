@@ -221,6 +221,11 @@ struct AirBridgePopover: View {
                     Text("AIRBRIDGE").font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(.tertiary)
                 }
             }
+            if selectedMode == "Wireless" {
+                Text("LOCAL NETWORK · NOT ENCRYPTED")
+                    .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(12)
         .frame(width: 350)
