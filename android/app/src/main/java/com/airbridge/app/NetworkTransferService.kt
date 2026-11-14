@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 
 data class AirBridgePeer(val name: String, val host: String, val port: Int)
 
@@ -34,7 +35,8 @@ class NetworkTransferService : Service() {
     private var registration: NsdManager.RegistrationListener? = null
     private var discovery: NsdManager.DiscoveryListener? = null
     @Volatile private var server: ServerSocket? = null
-    private val workers = Executors.newCachedThreadPool()
+    private val workers = Executors.newFixedThreadPool(4)
+    private val receiveSlots = Semaphore(3)
 
     override fun onCreate() {
         super.onCreate()
@@ -70,9 +72,14 @@ class NetworkTransferService : Service() {
                 AirBridgeState.update { AirBridgeState.status = "Ready · waiting for a Mac on Wi-Fi" }
                 while (!listener.isClosed) {
                     val client = listener.accept()
+                    if (!receiveSlots.tryAcquire()) {
+                        client.close()
+                        continue
+                    }
                     workers.execute {
                         client.use { socket ->
                             try {
+                                socket.soTimeout = 120_000
                                 val name = AirBridgeProtocol.receive(this, socket)
                                 socket.getOutputStream().write(0x06)
                                 socket.getOutputStream().flush()
@@ -82,6 +89,8 @@ class NetworkTransferService : Service() {
                                 }
                             } catch (failure: Throwable) {
                                 AirBridgeState.update { AirBridgeState.status = failure.localizedMessage ?: "Transfer failed" }
+                            } finally {
+                                receiveSlots.release()
                             }
                         }
                     }
