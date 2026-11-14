@@ -58,7 +58,7 @@ class NetworkTransferService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, "airbridge_transfer")
             .setSmallIcon(android.R.drawable.stat_sys_upload_done)
             .setContentTitle("AirBridge is ready")
-            .setContentText("Discovering trusted devices on your local network")
+            .setContentText("Discovering devices on your local network")
             .setOngoing(true)
             .build()
         startForeground(77, notification)
