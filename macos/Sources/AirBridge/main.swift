@@ -31,7 +31,7 @@ struct AirBridgePopover: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("AirBridge").font(.system(size: 23, weight: .semibold))
-                    Text("Private transfers between your Mac and Android")
+                    Text("Direct transfers between your Mac and Android")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -197,7 +197,7 @@ struct AirBridgePopover: View {
             .disabled(true)
 
             HStack {
-                Text("PRIVATE BY DESIGN")
+                Text("LOCAL NETWORK · NOT ENCRYPTED")
                 Spacer()
                 Text("USB MTP · NO ADB")
             }
