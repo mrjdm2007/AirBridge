@@ -63,7 +63,17 @@ object AirBridgeProtocol {
         try {
             resolver.openInputStream(uri).use { source ->
                 requireNotNull(source) { "Cannot open the selected file." }
-                FileOutputStream(temp).use { target -> source.copyTo(target) }
+                FileOutputStream(temp).use { target ->
+                    val buffer = ByteArray(64 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= MAX_TRANSFER_BYTES) { "Files larger than 20 GiB are not supported." }
+                        target.write(buffer, 0, count)
+                    }
+                }
             }
             val digest = MessageDigest.getInstance("SHA-256")
             val hash = temp.inputStream().use { stream ->
@@ -75,7 +85,8 @@ object AirBridgeProtocol {
                 }
                 digest.digest()
             }
-            Socket(address, port).use { socket ->
+            Socket().use { socket ->
+                socket.connect(java.net.InetSocketAddress(address, port), 15_000)
                 socket.soTimeout = 120_000
                 val output = DataOutputStream(socket.getOutputStream())
                 val nameBytes = name.toByteArray(Charsets.UTF_8)
