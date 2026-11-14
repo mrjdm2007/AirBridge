@@ -116,12 +116,15 @@ final class LANTransferController: ObservableObject {
         isTransferring = true
         canCancelTransfer = true
         cancellation.set(false)
+        let connectionBox = activeConnection
+        let cancellationFlag = cancellation
+        let transferQueue = queue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let accessed = file.startAccessingSecurityScopedResource()
             defer { if accessed { file.stopAccessingSecurityScopedResource() } }
             do {
-                try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global(), connectionBox: self?.activeConnection ?? LockedBox<NWConnection?>(nil), isCancelled: { self?.cancellation.get() ?? true }) { sent, total in
-                    Task { @MainActor in self?.progress = total == 0 ? 1 : Double(sent) / Double(total) }
+                try Self.sendFile(file, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
+                    Task { @MainActor [weak self] in self?.progress = total == 0 ? 1 : Double(sent) / Double(total) }
                 }
                 Task { @MainActor in
                     self?.progress = 1
