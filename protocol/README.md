@@ -1,32 +1,31 @@
-# AirBridge local protocol (v1)
+# AirBridge transport protocol
 
-## Discovery
-- Service type: `_airbridge._tcp.`
-- Instance name: user-configurable device display name.
-- TXT metadata: protocol version and a random installation identifier only. Never publish clipboard contents or filenames in discovery records.
+## Current prototype framing: ABR1
 
-## Pairing
-1. A device advertises a local service.
-2. The other device connects and requests pairing.
-3. Both devices display a short authentication code derived from an ephemeral key exchange.
-4. The user confirms the same code on both devices.
-5. Persist a per-peer identity and rotate session keys; reject unknown peers by default.
+The first prototype uses a single TCP connection per file. The same binary framing is implemented in Kotlin and Swift.
 
-## Transfer
-- Direct TCP connection on the advertised port.
-- Versioned, length-prefixed message envelope.
-- File data is streamed in bounded chunks; never buffer an entire file in memory.
-- Include transfer ID, sanitized display filename, total byte count, chunk offset, and SHA-256 digest.
-- Write to a temporary file, verify digest, then atomically move into the AirBridge Received folder.
-- Resume only after validating transfer ID, expected size and existing partial-file state.
+| Field | Size | Encoding |
+|---|---:|---|
+| Magic | 4 bytes | ASCII `ABR1` |
+| Filename length | 4 bytes | Unsigned big-endian integer |
+| File size | 8 bytes | Unsigned big-endian integer |
+| SHA-256 | 32 bytes | Raw digest bytes |
+| Filename | Variable | UTF-8, 1–1024 bytes |
+| File data | File size | Raw bytes |
 
-## Clipboard
-- Text-only v1; size limit and deduplication ID.
-- Bidirectional setting, with Mac-to-Android as the default.
-- Ignore updates originating from the remote clipboard to prevent feedback loops.
-- Clipboard payloads are sent only over the authenticated local session.
+The receiver streams file data into a temporary file, calculates SHA-256, and only publishes the file into the AirBridge Downloads folder after the digest matches. A one-byte `0x06` acknowledgement is sent after successful receipt.
 
-## Transport priority
-1. Direct Wi-Fi LAN.
-2. Validated USB-C transport when a supported USB data protocol is available.
-3. No cloud or relay fallback.
+Bonjour service type: `_airbridge._tcp.`.
+
+## Security status
+
+ABR1 is a development framing, **not a secure authenticated protocol**. Pairing, authentication, replay protection and TLS are not implemented. SHA-256 detects accidental or in-transit corruption; it does not authenticate the sender or encrypt content. Do not expose this prototype to untrusted networks or use it for sensitive data.
+
+## Planned protocol work
+
+- Authenticated pairing with user approval and persistent peer identity.
+- TLS or an equivalent authenticated encrypted transport.
+- Bounded transfer sizes and resource quotas.
+- Chunk identifiers, resume offsets and transfer IDs.
+- Progress, cancellation and explicit completion/error messages.
+- Clipboard messages with deduplication and loop prevention.
