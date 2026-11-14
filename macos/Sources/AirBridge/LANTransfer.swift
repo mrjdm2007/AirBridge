@@ -34,7 +34,7 @@ final class LANTransferController: ObservableObject {
             )
             listener.newConnectionHandler = { [weak self] connection in
                 connection.start(queue: self?.queue ?? .global())
-                self?.receive(on: connection, buffer: Data(), parser: IncomingParser())
+                Task { @MainActor in self?.receive(on: connection, parser: IncomingParser()) }
             }
             listener.stateUpdateHandler = { [weak self] state in
                 Task { @MainActor in
@@ -168,7 +168,7 @@ final class LANTransferController: ObservableObject {
         if let sendError { throw sendError }
     }
 
-    private func receive(on connection: NWConnection, buffer: Data, parser: IncomingParser) {
+    private func receive(on connection: NWConnection, parser: IncomingParser) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, complete, error in
             if let data, !data.isEmpty {
                 do {
@@ -192,7 +192,7 @@ final class LANTransferController: ObservableObject {
                 Task { @MainActor in self?.error = "The sender disconnected before the file completed." }
                 connection.cancel()
             } else {
-                self?.receive(on: connection, buffer: Data(), parser: parser)
+                Task { @MainActor in self?.receive(on: connection, parser: parser) }
             }
         }
     }
@@ -283,6 +283,7 @@ private final class IncomingParser {
         let cleaned = input.replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "\\", with: "_")
             .components(separatedBy: .controlCharacters).joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines.union(CharacterSet(charactersIn: ".")))
         return String(cleaned.prefix(180)).isEmpty ? "AirBridge-file" : String(cleaned.prefix(180))
     }
 }
