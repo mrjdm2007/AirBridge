@@ -47,13 +47,13 @@ class MainActivity : ComponentActivity() {
     private fun handleShare(intent: Intent?) {
         if (intent?.action == Intent.ACTION_SEND) {
             val uri = intent.getParcelableExtra<android.net.Uri>(Intent.EXTRA_STREAM)
-            if (uri != null) AirBridgeState.pendingUris = listOf(uri)
+            if (uri != null) { AirBridgeState.pendingUris = listOf(uri); AirBridgeState.directShareRequested = true }
         } else if (intent?.action == Intent.ACTION_SEND_MULTIPLE) {
             @Suppress("DEPRECATION")
             val uris = if (android.os.Build.VERSION.SDK_INT >= 33)
                 intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
             else intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
-            if (uris != null) AirBridgeState.pendingUris = uris
+            if (uris != null) { AirBridgeState.pendingUris = uris; AirBridgeState.directShareRequested = true }
         }
     }
 
