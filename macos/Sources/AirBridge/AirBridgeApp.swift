@@ -244,7 +244,7 @@ struct AirBridgePopover: View {
             case .failure(let failure): mtp.error = failure.localizedDescription
             }
         }
-        .onAppear { lan.start(); mtp.refresh() }
+        .onAppear { lan.start() }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
@@ -264,7 +264,7 @@ struct AirBridgePopover: View {
     }
 
     private func modeButton(_ title: String, icon: String) -> some View {
-        Button { selectedMode = title } label: {
+        Button { selectedMode = title; if title == "Wired" { mtp.refresh() } } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                 Text(title)
