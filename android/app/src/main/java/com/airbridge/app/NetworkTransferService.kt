@@ -184,8 +184,8 @@ class NetworkTransferService : Service() {
     private fun publishMacShareShortcut() {
         if (Build.VERSION.SDK_INT < 30) return
         val shortcut = android.content.pm.ShortcutInfo.Builder(this, "airbridge-mac")
-            .setShortLabel("MacBook Air M1")
-            .setLongLabel("Send to MacBook Air M1")
+            .setShortLabel("MacBook M1 Air")
+            .setLongLabel("Send to MacBook M1 Air")
             .setIcon(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher))
             .setIntent(Intent(this, MainActivity::class.java).apply {
                 action = Intent.ACTION_SEND
