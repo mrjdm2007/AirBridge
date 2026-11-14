@@ -8,6 +8,8 @@ import android.os.Environment
 import android.provider.MediaStore
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.io.BufferedInputStream
+import java.io.BufferedOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.net.InetAddress
@@ -17,10 +19,14 @@ import java.security.MessageDigest
 object AirBridgeProtocol {
     private val magic = byteArrayOf(0x41, 0x42, 0x52, 0x31) // ABR1
     private const val MAX_TRANSFER_BYTES = 20L * 1024L * 1024L * 1024L
+    private const val IO_BUFFER_BYTES = 1024 * 1024
 
     fun receive(context: Context, socket: Socket, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
         socket.soTimeout = 120_000
-        val input = DataInputStream(socket.getInputStream())
+        socket.tcpNoDelay = true
+        socket.receiveBufferSize = IO_BUFFER_BYTES
+        socket.sendBufferSize = IO_BUFFER_BYTES
+        val input = DataInputStream(BufferedInputStream(socket.getInputStream(), IO_BUFFER_BYTES))
         val signature = ByteArray(4)
         input.readFully(signature)
         require(signature.contentEquals(magic)) { "Unrecognized AirBridge transfer." }
@@ -38,7 +44,7 @@ object AirBridgeProtocol {
         val temp = File(context.cacheDir, "incoming-${System.nanoTime()}.part")
         try {
             FileOutputStream(temp).use { output ->
-                val buffer = ByteArray(64 * 1024)
+                val buffer = ByteArray(IO_BUFFER_BYTES)
                 var remaining = fileSize
                 while (remaining > 0) {
                     val count = input.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
@@ -65,7 +71,7 @@ object AirBridgeProtocol {
             resolver.openInputStream(uri).use { source ->
                 requireNotNull(source) { "Cannot open the selected file." }
                 FileOutputStream(temp).use { target ->
-                    val buffer = ByteArray(64 * 1024)
+                    val buffer = ByteArray(IO_BUFFER_BYTES)
                     var total = 0L
                     while (true) {
                         val count = source.read(buffer)
@@ -78,7 +84,7 @@ object AirBridgeProtocol {
             }
             val digest = MessageDigest.getInstance("SHA-256")
             val hash = temp.inputStream().use { stream ->
-                val buffer = ByteArray(64 * 1024)
+                val buffer = ByteArray(IO_BUFFER_BYTES)
                 while (true) {
                     val count = stream.read(buffer)
                     if (count < 0) break
@@ -87,17 +93,20 @@ object AirBridgeProtocol {
                 digest.digest()
             }
             Socket().use { socket ->
+                socket.tcpNoDelay = true
+                socket.sendBufferSize = IO_BUFFER_BYTES
+                socket.receiveBufferSize = IO_BUFFER_BYTES
                 socket.connect(java.net.InetSocketAddress(address, port), 15_000)
                 socket.soTimeout = 120_000
-                val output = DataOutputStream(socket.getOutputStream())
+                val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream(), IO_BUFFER_BYTES))
                 val nameBytes = name.toByteArray(Charsets.UTF_8)
                 output.write(magic)
                 output.writeInt(nameBytes.size)
                 output.writeLong(temp.length())
                 output.write(hash)
                 output.write(nameBytes)
-                temp.inputStream().use { input ->
-                    val buffer = ByteArray(64 * 1024)
+                temp.inputStream().buffered(IO_BUFFER_BYTES).use { input ->
+                    val buffer = ByteArray(IO_BUFFER_BYTES)
                     var sent = 0L
                     while (true) {
                         val count = input.read(buffer)
