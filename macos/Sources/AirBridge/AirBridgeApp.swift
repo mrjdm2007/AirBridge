@@ -18,11 +18,57 @@ func airBridgeItemSize(_ url: URL) -> Int64 {
 @main
 struct AirBridgeApp: App {
     var body: some Scene {
+        // Keep the menu-bar control lightweight. The actual tray lives in its own
+        // floating NSWindow so Finder/file panels can take focus without dismissing it.
         MenuBarExtra("AirBridge", systemImage: "arrow.up.arrow.down.square") {
-            AirBridgePopover()
+            Button {
+                AirBridgeTrayWindow.shared.show()
+            } label: {
+                Label("Open Drop Tray", systemImage: "tray.and.arrow.down")
+            }
         }
-        .menuBarExtraStyle(.window)
+        .menuBarExtraStyle(.menu)
+    }
+}
 
+@MainActor
+final class AirBridgeTrayWindow {
+    static let shared = AirBridgeTrayWindow()
+    private var window: NSWindow?
+
+    func show() {
+        if let window {
+            if window.isMiniaturized { window.deminiaturize(nil) }
+            NSApp.activate(ignoringOtherApps: true)
+            window.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let tray = AirBridgePopover()
+        let hosting = NSHostingController(rootView: tray)
+        let panel = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 374, height: 560),
+            styleMask: [.titled, .closable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "AirBridge Drop Tray"
+        panel.titlebarAppearsTransparent = true
+        panel.titleVisibility = .hidden
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.contentViewController = hosting
+        panel.center()
+        panel.setFrameAutosaveName("AirBridgeDropTray")
+        window = panel
+
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 }
 
