@@ -74,7 +74,7 @@ final class LANTransferController: ObservableObject {
     func send(_ file: URL, to peer: LANPeer) {
         status = "Sending \(file.lastPathComponent)…"
         error = nil
-        queue.async { [weak self] in
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global())
                 Task { @MainActor in self?.status = "Sent \(file.lastPathComponent) to \(peer.id)" }
