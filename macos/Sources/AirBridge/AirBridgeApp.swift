@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-private func airBridgeItemSize(_ url: URL) -> Int64 {
+func airBridgeItemSize(_ url: URL) -> Int64 {
     if url.hasDirectoryPath, let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) {
         var total: Int64 = 0
         for case let child as URL in enumerator {
