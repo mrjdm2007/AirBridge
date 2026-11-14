@@ -62,7 +62,7 @@ class MainActivity : ComponentActivity() {
             AirBridgeState.status = "Share a file to AirBridge first."
             return
         }
-        Thread {
+        Thread(Runnable {
             try {
                 uris.forEach { uri ->
                     AirBridgeProtocol.send(this, uri, InetAddress.getByName(peer.host), peer.port)
@@ -74,7 +74,7 @@ class MainActivity : ComponentActivity() {
             } catch (failure: Throwable) {
                 AirBridgeState.update { AirBridgeState.status = failure.localizedMessage ?: "Send failed" }
             }
-        }.start()
+        }).start()
     }
 }
 
