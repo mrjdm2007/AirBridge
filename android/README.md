@@ -1,13 +1,26 @@
-# Android
+# Android app
 
-Native Kotlin / Jetpack Compose application. Target device: Android 15.
+Native Kotlin + Jetpack Compose application, minimum Android 8.0 (API 26).
+
+## Current prototype
+
+- Advertises AirBridge over Android NSD / Bonjour-compatible DNS-SD.
+- Discovers AirBridge Mac service instances on the local network.
+- Receives files into `Downloads/AirBridge` using MediaStore on Android 10+.
+- Exposes Android's `ACTION_SEND` and `ACTION_SEND_MULTIPLE` share-sheet targets.
+- Sends shared files to a discovered Mac using the ABR1 TCP protocol and SHA-256 verification.
+
+## Test flow
+
+1. Connect the phone and Mac to the same LAN.
+2. Start AirBridge on both devices.
+3. From another Android app, use Share → AirBridge.
+4. Choose the discovered Mac and send.
+
+The current protocol has no authentication or encryption. Use only on a trusted test LAN and only with non-sensitive test files.
 
 ## Build
-Open this directory in Android Studio with a current stable Android Gradle Plugin and JDK 17. The initial scaffold is being expanded; do not treat this milestone as a finished transfer client.
 
-## Planned integration
-- Android NSD service discovery for `_airbridge._tcp.`
-- Foreground connection service for reliable active sessions.
-- Android Sharesheet send target and SAF document picker.
-- Received files stored in app-specific external files, with user-visible export/share actions.
-- Clipboard sync is opt-in and respects Android background clipboard restrictions.
+```sh
+gradle assembleDebug
+```
