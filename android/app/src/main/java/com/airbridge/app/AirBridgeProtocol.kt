@@ -16,15 +16,19 @@ import java.security.MessageDigest
 
 object AirBridgeProtocol {
     private val magic = byteArrayOf(0x41, 0x42, 0x52, 0x31) // ABR1
+    private const val MAX_TRANSFER_BYTES = 20L * 1024L * 1024L * 1024L
 
     fun receive(context: Context, socket: Socket): String {
+        socket.soTimeout = 120_000
         val input = DataInputStream(socket.getInputStream())
         val signature = ByteArray(4)
         input.readFully(signature)
         require(signature.contentEquals(magic)) { "Unrecognized AirBridge transfer." }
         val nameLength = input.readInt()
         val fileSize = input.readLong()
-        require(nameLength in 1..1024 && fileSize >= 0) { "Invalid transfer header." }
+        require(nameLength in 1..1024 && fileSize in 0..MAX_TRANSFER_BYTES) { "Invalid transfer header or file exceeds the 20 GiB limit." }
+        val available = context.cacheDir.usableSpace
+        require(fileSize <= available) { "Not enough temporary storage to receive this file." }
         val expectedHash = ByteArray(32)
         input.readFully(expectedHash)
         val rawName = ByteArray(nameLength)
@@ -100,8 +104,22 @@ object AirBridgeProtocol {
         val clean = value.substringAfterLast('/').substringAfterLast('\\')
             .replace(Regex("[\\u0000-\\u001F]"), "_")
             .replace(Regex("[<>:\"|?*]"), "_")
-            .trim().take(180)
-        return clean.ifBlank { "AirBridge-file" }
+            .trim().trim('.').take(180)
+        return clean.takeUnless { it.isBlank() || it == "." || it == ".." } ?: "AirBridge-file"
+    }
+
+    private fun uniqueDestination(directory: File, name: String): File {
+        val original = File(directory, name)
+        if (!original.exists()) return original
+        val base = original.nameWithoutExtension
+        val extension = original.extension
+        var index = 1
+        while (true) {
+            val candidateName = if (extension.isEmpty()) "$base ($index)" else "$base ($index).$extension"
+            val candidate = File(directory, candidateName)
+            if (!candidate.exists()) return candidate
+            index++
+        }
     }
 
     private fun saveToDownloads(context: Context, source: File, name: String) {
@@ -128,7 +146,8 @@ object AirBridgeProtocol {
         } else {
             val directory = File(context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "AirBridge")
             check(directory.mkdirs() || directory.isDirectory)
-            source.copyTo(File(directory, name), overwrite = true)
+            val destination = uniqueDestination(directory, name)
+            source.copyTo(destination, overwrite = false)
         }
     }
 }
