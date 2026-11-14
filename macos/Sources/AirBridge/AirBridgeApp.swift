@@ -83,22 +83,20 @@ struct AirBridgePopover: View {
                             .font(.system(size: 9)).disabled(!lan.canCancelTransfer)
                     }
                 }
-                if lan.peers.isEmpty {
-                    Text("Open AirBridge on your Moto Edge 50 Neo and keep it on your phone hotspot.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                } else {
-                    ForEach(lan.peers) { peer in
-                        HStack {
-                            Image(systemName: "iphone").foregroundStyle(.secondary)
-                            Text(peer.id).font(.system(size: 12, weight: .medium))
-                            Spacer()
-                            Button("Send file…") {
-                                lanTarget = peer
-                                showingLANImporter = true
-                            }
-                            .buttonStyle(.bordered)
+                if let phone = lan.peers.first {
+                    HStack {
+                        Image(systemName: "iphone").foregroundStyle(.secondary)
+                        Text("Moto Edge 50 Neo").font(.system(size: 12, weight: .medium))
+                        Spacer()
+                        Button("Send file…") {
+                            lanTarget = phone
+                            showingLANImporter = true
                         }
+                        .buttonStyle(.borderedProminent)
                     }
+                } else {
+                    Text("Waiting for your Moto Edge 50 Neo. Keep AirBridge open on the phone and connected to its hotspot.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 if let error = lan.error {
                     Text(error).font(.system(size: 10)).foregroundStyle(.red).textSelection(.enabled)
