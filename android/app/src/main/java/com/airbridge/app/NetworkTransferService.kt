@@ -11,6 +11,8 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Handler
 import android.os.Looper
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationCompat
 import java.net.ServerSocket
 import java.net.Socket
@@ -24,7 +26,7 @@ object AirBridgeState {
     var lastReceived by androidx.compose.runtime.mutableStateOf("")
     var pendingUris by androidx.compose.runtime.mutableStateOf<List<android.net.Uri>>(emptyList())
     private val main = Handler(Looper.getMainLooper())
-    fun update(block: () -> Unit) = main.post(block)
+    fun update(block: () -> Unit) { main.post { block() } }
 }
 
 class NetworkTransferService : Service() {
