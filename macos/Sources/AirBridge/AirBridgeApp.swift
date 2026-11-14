@@ -206,7 +206,7 @@ struct AirBridgePopover: View {
                 ForEach(lan.history.prefix(4)) { item in
                     HStack(spacing: 8) {
                         Image(systemName: item.direction == "Sent" ? "arrow.up.circle" : "arrow.down.circle")
-                            .foregroundStyle(item.succeeded ? .secondary : .red)
+                            .foregroundColor(item.succeeded ? Color.secondary : Color.red)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.filename).font(.system(size: 11, weight: .medium)).lineLimit(1)
                             Text("\(item.direction) · \(item.peer) · \(ByteCountFormatter.string(fromByteCount: Int64(clamping: item.bytes), countStyle: .file)) · \(item.date.formatted(date: .abbreviated, time: .shortened))")
