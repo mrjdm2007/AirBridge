@@ -87,16 +87,16 @@ final class LANTransferController: ObservableObject {
         }
     }
 
-    private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue) throws {
+    nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue) throws {
         let connection = NWConnection(to: endpoint, using: .tcp)
         defer { connection.cancel() }
         let ready = DispatchSemaphore(value: 0)
         let finished = DispatchSemaphore(value: 0)
-        var connectionError: NWError?
+        let connectionError = LockedBox<NWError?>(nil)
         connection.stateUpdateHandler = { state in
             switch state {
             case .ready: ready.signal()
-            case .failed(let error): connectionError = error; ready.signal()
+            case .failed(let error): connectionError.set(error); ready.signal()
             case .cancelled: finished.signal()
             default: break
             }
@@ -106,7 +106,7 @@ final class LANTransferController: ObservableObject {
             connection.cancel()
             throw LANError.timeout
         }
-        if let connectionError { throw connectionError }
+        if let error = connectionError.get() { throw error }
 
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
@@ -144,12 +144,12 @@ final class LANTransferController: ObservableObject {
         }
 
         let ack = DispatchSemaphore(value: 0)
-        var acknowledged = false
+        let acknowledged = LockedBox(false)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { data, _, _, _ in
-            acknowledged = data?.first == 0x06
+            acknowledged.set(data?.first == 0x06)
             ack.signal()
         }
-        guard ack.wait(timeout: .now() + 120) == .success, acknowledged else {
+        guard ack.wait(timeout: .now() + 120) == .success, acknowledged.get() else {
             connection.cancel()
             throw LANError.transferRejected
         }
@@ -157,15 +157,15 @@ final class LANTransferController: ObservableObject {
         _ = finished.wait(timeout: .now() + 1)
     }
 
-    private static func sendData(_ data: Data, through connection: NWConnection) throws {
+    nonisolated private static func sendData(_ data: Data, through connection: NWConnection) throws {
         let semaphore = DispatchSemaphore(value: 0)
-        var sendError: NWError?
+        let sendError = LockedBox<NWError?>(nil)
         connection.send(content: data, completion: .contentProcessed { error in
-            sendError = error
+            sendError.set(error)
             semaphore.signal()
         })
         guard semaphore.wait(timeout: .now() + 120) == .success else { throw LANError.timeout }
-        if let sendError { throw sendError }
+        if let error = sendError.get() { throw error }
     }
 
     private func receive(on connection: NWConnection, parser: IncomingParser) {
@@ -199,7 +199,7 @@ final class LANTransferController: ObservableObject {
     }
 }
 
-private final class IncomingParser {
+private final class IncomingParser: @unchecked Sendable {
     private var buffer = Data()
     private var parsedHeader = false
     private var expectedSize: UInt64 = 0
@@ -302,6 +302,14 @@ private enum LANError: LocalizedError {
         case .insufficientStorage: return "There is not enough free storage to receive this file."
         }
     }
+}
+
+private final class LockedBox<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: Value
+    init(_ value: Value) { self.value = value }
+    func set(_ newValue: Value) { lock.lock(); defer { lock.unlock() }; value = newValue }
+    func get() -> Value { lock.lock(); defer { lock.unlock() }; return value }
 }
 
 private extension Data {
