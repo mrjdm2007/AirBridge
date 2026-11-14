@@ -124,28 +124,22 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                     }
                 }
                 Text("YOUR MACBOOK AIR M1", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
-                if (AirBridgeState.peers.isEmpty()) {
+                val macPeer = AirBridgeState.peers.firstOrNull()
+                if (macPeer == null) {
                     Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Rounded.Computer, contentDescription = null, tint = Muted, modifier = Modifier.size(28.dp))
                         Text("Looking for your MacBook Air M1…", color = Ink, fontWeight = FontWeight.Medium)
                         Text("Connect your MacBook Air M1 to this phone’s hotspot.", color = Muted, fontSize = 11.sp)
                     }
                 } else {
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-                        items(AirBridgeState.peers) { peer ->
-                            Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(peer.name, color = Ink, fontWeight = FontWeight.SemiBold)
-                                    Text(peer.host, color = Muted, fontSize = 11.sp)
-                                }
-                                Button(onClick = { onSend(peer) }, enabled = AirBridgeState.pendingUris.isNotEmpty()) {
-                                    Icon(Icons.Rounded.Send, contentDescription = null)
-                                    Spacer(Modifier.width(5.dp))
-                                    Text("Send")
-                                }
-                            }
+                    Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink)
+                        Spacer(Modifier.width(12.dp))
+                        Text("MacBook Air M1", color = Ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        Button(onClick = { onSend(macPeer) }, enabled = AirBridgeState.pendingUris.isNotEmpty()) {
+                            Icon(Icons.Rounded.Send, contentDescription = null)
+                            Spacer(Modifier.width(5.dp))
+                            Text("Send")
                         }
                     }
                 }
