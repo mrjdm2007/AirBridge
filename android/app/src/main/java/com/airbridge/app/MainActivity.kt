@@ -24,9 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.net.InetAddress
 
-private val Ink = Color(0xFF101010)
-private val Paper = Color(0xFFF5F5F3)
-private val Muted = Color(0xFF858585)
+private val Ink = Color(0xFFF4F4F2)
+private val Paper = Color(0xFF101010)
+private val Card = Color(0xFF1B1B1B)
+private val Muted = Color(0xFF9A9A9A)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,7 +86,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
     var clipboardSync by remember { mutableStateOf(false) }
-    MaterialTheme(colorScheme = lightColorScheme(background = Paper, surface = Color.White, primary = Ink, onPrimary = Color.White)) {
+    MaterialTheme(colorScheme = darkColorScheme(background = Paper, surface = Card, primary = Color(0xFFF4F4F2), onPrimary = Color(0xFF101010), onSurface = Ink, onBackground = Ink)) {
         Surface(Modifier.fillMaxSize(), color = Paper) {
             Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 26.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -95,7 +96,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                     }
                     Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(27.dp))
                 }
-                Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(20.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(20.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("CONNECTION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
                     Text(AirBridgeState.status, color = Ink, fontSize = 13.sp)
                     if (AirBridgeState.transferActive) {
