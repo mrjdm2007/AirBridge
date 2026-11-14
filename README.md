@@ -26,6 +26,10 @@ Implemented in the current source:
 - Transfer resume, user-facing progress/cancellation, robust reconnect and extensive error recovery are not implemented.
 - Mac drag-and-drop sending and trusted-device persistence are not yet implemented.
 
+## Feature roadmap
+
+See [docs/FEATURE_ROADMAP.md](docs/FEATURE_ROADMAP.md) for the prioritized plan covering secure pairing, encrypted transfers, resumable queues, folder sharing, drag-and-drop, opt-in clipboard sync, transfer history and advanced options. These are planned features, not claims about the current prototype.
+
 ## Wi-Fi setup for development testing
 
 Both devices must be on the same local network. Internet access is not required for local transfer. Android advertises `_airbridge._tcp.` using NSD; the Mac browses Bonjour and runs a direct TCP receiver.
