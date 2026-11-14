@@ -125,16 +125,30 @@ final class LANTransferController: ObservableObject {
             do {
                 let sizes = files.map { (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? NSNumber)?.uint64Value ?? 0 }
                 let totalBytes = max(1, sizes.reduce(UInt64(0), +))
-                var completed: UInt64 = 0
+                let completedBytes = LockedBox<UInt64>(0)
                 for (index, file) in files.enumerated() {
                     if cancellationFlag.get() { throw LANError.cancelled }
                     let accessed = file.startAccessingSecurityScopedResource()
                     defer { if accessed { file.stopAccessingSecurityScopedResource() } }
-                    try Self.sendFile(file, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
-                        let overall = Double(completed + sent) / Double(totalBytes)
+                    var transferURL = file
+                    var temporaryArchive: URL?
+                    if file.hasDirectoryPath && file.pathExtension.lowercased() == "app" {
+                        let archive = FileManager.default.temporaryDirectory.appendingPathComponent("AirBridge-\(UUID().uuidString).app.zip")
+                        let process = Process()
+                        process.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+                        process.arguments = ["-c", "-k", "--sequesterRsrc", "--keepParent", file.path, archive.path]
+                        try process.run()
+                        process.waitUntilExit()
+                        guard process.terminationStatus == 0 else { throw LANError.invalidName }
+                        transferURL = archive
+                        temporaryArchive = archive
+                    }
+                    defer { if let temporaryArchive { try? FileManager.default.removeItem(at: temporaryArchive) } }
+                    try Self.sendFile(transferURL, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
+                        let overall = Double(completedBytes.get() + sent) / Double(totalBytes)
                         Task { @MainActor [weak self] in self?.progress = min(1, overall) }
                     }
-                    completed += sizes[index]
+                    completedBytes.set(completedBytes.get() + sizes[index])
                     Task { @MainActor [weak self] in self?.status = "Sent \(index + 1) of \(files.count)" }
                 }
                 Task { @MainActor in
