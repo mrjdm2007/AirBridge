@@ -76,6 +76,8 @@ final class LANTransferController: ObservableObject {
         status = "Sending \(file.lastPathComponent)…"
         error = nil
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let accessed = file.startAccessingSecurityScopedResource()
+            defer { if accessed { file.stopAccessingSecurityScopedResource() } }
             do {
                 try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global())
                 Task { @MainActor in self?.status = "Sent \(file.lastPathComponent) to \(peer.id)" }
@@ -87,6 +89,7 @@ final class LANTransferController: ObservableObject {
 
     private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue) throws {
         let connection = NWConnection(to: endpoint, using: .tcp)
+        defer { connection.cancel() }
         let ready = DispatchSemaphore(value: 0)
         let finished = DispatchSemaphore(value: 0)
         var connectionError: NWError?
@@ -107,6 +110,7 @@ final class LANTransferController: ObservableObject {
 
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        guard size <= 20 * 1024 * 1024 * 1024 else { throw LANError.fileTooLarge }
         let filename = url.lastPathComponent
         let name = Data(filename.utf8)
         guard !name.isEmpty && name.count <= 1024 else { throw LANError.invalidName }
@@ -135,7 +139,9 @@ final class LANTransferController: ObservableObject {
         }
         let sendDone = DispatchSemaphore(value: 0)
         connection.send(content: nil, contentContext: .defaultMessage, isComplete: true, completion: .contentProcessed { _ in sendDone.signal() })
-        _ = sendDone.wait(timeout: .now() + 30)
+        guard sendDone.wait(timeout: .now() + 30) == .success else {
+            throw LANError.timeout
+        }
 
         let ack = DispatchSemaphore(value: 0)
         var acknowledged = false
@@ -172,6 +178,7 @@ final class LANTransferController: ObservableObject {
                         return
                     }
                 } catch {
+                    parser.abort()
                     Task { @MainActor in self?.error = error.localizedDescription }
                     connection.cancel()
                     return
@@ -181,6 +188,7 @@ final class LANTransferController: ObservableObject {
                 Task { @MainActor in self?.error = "Incoming transfer: \(error.localizedDescription)" }
                 connection.cancel()
             } else if complete {
+                parser.abort()
                 Task { @MainActor in self?.error = "The sender disconnected before the file completed." }
                 connection.cancel()
             } else {
@@ -210,6 +218,8 @@ private final class IncomingParser {
             expectedSize = buffer.readBE(UInt64.self, at: 8)
             expectedDigest = buffer.subdata(in: 16..<48)
             guard (1...1024).contains(nameLength), expectedSize <= 20 * 1024 * 1024 * 1024 else { throw LANError.badHeader }
+            let free = (try? FileManager.default.attributesOfFileSystem(forPath: FileManager.default.temporaryDirectory.path)[.systemFreeSize] as? NSNumber)?.uint64Value ?? 0
+            guard expectedSize <= free else { throw LANError.insufficientStorage }
             guard buffer.count >= 48 + nameLength else { return false }
             filename = Self.safeName(String(data: buffer.subdata(in: 48..<(48 + nameLength)), encoding: .utf8) ?? "file")
             buffer.removeFirst(48 + nameLength)
@@ -230,19 +240,43 @@ private final class IncomingParser {
             written += amount
         }
         guard written == expectedSize else { return false }
+        guard buffer.isEmpty else { throw LANError.badHeader }
         try output?.close()
         output = nil
-        guard Data(hasher.finalize()) == expectedDigest else { throw LANError.integrity }
+        guard Data(hasher.finalize()) == expectedDigest else {
+            cleanup()
+            throw LANError.integrity
+        }
         let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].appendingPathComponent("AirBridge", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let destination = directory.appendingPathComponent(filename)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            let unique = directory.appendingPathComponent("\(destination.deletingPathExtension().lastPathComponent)-\(UUID().uuidString.prefix(8)).\(destination.pathExtension)")
-            try FileManager.default.moveItem(at: temporaryURL!, to: unique)
-        } else {
-            try FileManager.default.moveItem(at: temporaryURL!, to: destination)
-        }
+        let destination = uniqueDestination(in: directory, filename: filename)
+        guard let temporaryURL else { throw LANError.badHeader }
+        try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        self.temporaryURL = nil
         return true
+    }
+
+    func abort() { cleanup() }
+
+    private func cleanup() {
+        try? output?.close()
+        output = nil
+        if let temporaryURL { try? FileManager.default.removeItem(at: temporaryURL) }
+        temporaryURL = nil
+    }
+
+    private func uniqueDestination(in directory: URL, filename: String) -> URL {
+        let original = directory.appendingPathComponent(filename)
+        if !FileManager.default.fileExists(atPath: original.path) { return original }
+        let base = original.deletingPathExtension().lastPathComponent
+        let ext = original.pathExtension
+        var index = 1
+        while true {
+            let candidateName = ext.isEmpty ? "\(base) (\(index))" : "\(base) (\(index)).\(ext)"
+            let candidate = directory.appendingPathComponent(candidateName)
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            index += 1
+        }
     }
 
     private static func safeName(_ input: String) -> String {
@@ -254,7 +288,7 @@ private final class IncomingParser {
 }
 
 private enum LANError: LocalizedError {
-    case timeout, invalidName, transferRejected, badHeader, integrity
+    case timeout, invalidName, transferRejected, badHeader, integrity, fileTooLarge, insufficientStorage
     var errorDescription: String? {
         switch self {
         case .timeout: return "The network transfer timed out."
@@ -262,6 +296,8 @@ private enum LANError: LocalizedError {
         case .transferRejected: return "The Android device did not confirm the transfer."
         case .badHeader: return "The incoming AirBridge transfer header is invalid."
         case .integrity: return "The received file failed its SHA-256 integrity check."
+        case .fileTooLarge: return "Files larger than 20 GiB are not supported."
+        case .insufficientStorage: return "There is not enough free storage to receive this file."
         }
     }
 }
