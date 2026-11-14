@@ -1,0 +1,84 @@
+name: AirBridge — Android + macOS builds
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: airbridge-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build debug APK
+        working-directory: android
+        run: gradle --no-daemon assembleDebug
+      - name: Run unit tests
+        working-directory: android
+        run: gradle --no-daemon testDebugUnitTest
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirBridge-Android-APK
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  macos:
+    name: macOS app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install MTP host tools
+        run: brew install libmtp
+      - name: Run Swift tests
+        working-directory: macos
+        run: swift test
+      - name: Build release app
+        working-directory: macos
+        run: swift build -c release
+      - name: Package AirBridge.app
+        working-directory: macos
+        run: |
+          APP="AirBridge.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp .build/release/AirBridge "$APP/Contents/MacOS/AirBridge"
+          cat > "$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleExecutable</key><string>AirBridge</string>
+          <key>CFBundleIdentifier</key><string>com.airbridge.app</string>
+          <key>CFBundleName</key><string>AirBridge</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>LSMinimumSystemVersion</key><string>13.0</string>
+          <key>NSLocalNetworkUsageDescription</key><string>AirBridge discovers and transfers files directly with your Android device on your local network.</string>
+          <key>NSBonjourServices</key><array><string>_airbridge._tcp</string></array>
+          <key>NSHighResolutionCapable</key><true/>
+          </dict></plist>
+          PLIST
+          ditto -c -k --sequesterRsrc --keepParent "$APP" AirBridge-macOS.zip
+      - name: Upload macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: AirBridge-macOS-App
+          path: macos/AirBridge-macOS.zip
+          if-no-files-found: error
+          retention-days: 30
