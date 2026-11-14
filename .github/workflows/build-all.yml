@@ -57,8 +57,8 @@ jobs:
           APP="AirBridge.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" AirBridge.iconset
           cp .build/release/AirBridge "$APP/Contents/MacOS/AirBridge"
-          rsvg-convert -w 1024 -h 1024 ../../assets/airbridge-mark.svg -o AirBridge-1024.png
-          for size in 16 32 64 128 256 512; do
+          rsvg-convert -w 1024 -h 1024 ../assets/airbridge-mark.svg -o AirBridge-1024.png
+          for size in 16 32 128 256 512; do
             sips -z "$size" "$size" AirBridge-1024.png --out "AirBridge.iconset/icon_${size}x${size}.png" >/dev/null
           done
           sips -z 32 32 AirBridge-1024.png --out AirBridge.iconset/icon_16x16@2x.png >/dev/null
