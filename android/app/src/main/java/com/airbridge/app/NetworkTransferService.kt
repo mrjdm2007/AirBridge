@@ -75,7 +75,11 @@ class NetworkTransferService : Service() {
                 server = listener
                 AirBridgeState.update { AirBridgeState.status = "Ready · waiting for a Mac on Wi-Fi" }
                 while (!listener.isClosed) {
-                    val client = listener.accept()
+                    val client = listener.accept().apply {
+                        tcpNoDelay = true
+                        receiveBufferSize = 1024 * 1024
+                        sendBufferSize = 1024 * 1024
+                    }
                     if (!receiveSlots.tryAcquire()) {
                         client.close()
                         continue
