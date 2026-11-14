@@ -25,6 +25,27 @@ struct AirBridgePopover: View {
     @State private var showingLANImporter = false
     @State private var lanTarget: LANPeer?
     @State private var clipboardEnabled = false
+    @State private var selectedMode = "Wireless"
+
+    @ViewBuilder
+    private func modeCard(title: String, subtitle: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(.system(size: 18, weight: .medium))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.system(size: 13, weight: .semibold))
+                    Text(subtitle).font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary) }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selected ? Color.primary.opacity(0.12) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.primary.opacity(0.35) : Color.clear, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -39,6 +60,16 @@ struct AirBridgePopover: View {
                     .font(.system(size: 24, weight: .regular))
             }
 
+            HStack(spacing: 10) {
+                modeCard(title: "Wireless", subtitle: "Local network", symbol: "wifi", selected: selectedMode == "Wireless") {
+                    selectedMode = "Wireless"
+                }
+                modeCard(title: "Wired", subtitle: "USB · MTP", symbol: "cable.connector", selected: selectedMode == "Wired") {
+                    selectedMode = "Wired"
+                }
+            }
+
+            if selectedMode == "Wireless" {
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
                     Text("WI-FI DEVICES")
@@ -76,6 +107,7 @@ struct AirBridgePopover: View {
             .padding(12)
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
 
+            } else {
             HStack(spacing: 10) {
                 Image(systemName: mtp.isConnected ? "cable.connector" : "cable.connector.slash")
                     .font(.system(size: 18))
@@ -190,6 +222,9 @@ struct AirBridgePopover: View {
                     .textSelection(.enabled)
             }
 
+            }
+
+            if selectedMode == "Wireless" {
             Divider()
 
             HStack {
@@ -231,10 +266,11 @@ struct AirBridgePopover: View {
             HStack {
                 Text("LOCAL NETWORK · NOT ENCRYPTED")
                 Spacer()
-                Text("USB MTP · NO ADB")
+                Text("WIRELESS")
             }
             .font(.system(size: 8, weight: .semibold, design: .rounded))
             .tracking(0.8).foregroundStyle(.tertiary)
+            }
         }
         .padding(18)
         .frame(width: 480, height: 650)
