@@ -1,11 +1,18 @@
 package com.airbridge.app
 
 import android.content.Intent
+import android.content.ContentValues
+import android.provider.MediaStore
+import android.os.Environment
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +24,8 @@ import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -35,7 +44,7 @@ class MainActivity : ComponentActivity() {
         handleShare(intent)
         val service = Intent(this, NetworkTransferService::class.java)
         if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
-        setContent { AirBridgeScreen(onSend = { peer -> sendPending(peer) }) }
+        setContent { AirBridgeScreen(onSend = { peer -> sendPending(peer) }, onAddText = { text -> addTextItem(text) }) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -75,6 +84,29 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun addTextItem(text: String) {
+        if (text.isBlank()) return
+        val values = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, "AirBridge-Text-@@{System.currentTimeMillis()}.txt")
+            put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/AirBridge")
+            put(MediaStore.Downloads.IS_PENDING, 1)
+        }
+        val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: run {
+            AirBridgeState.status = "Could not create the text item."
+            return
+        }
+        try {
+            contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } ?: error("Could not write text.")
+            val ready = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
+            contentResolver.update(uri, ready, null, null)
+            AirBridgeState.pendingUris = AirBridgeState.pendingUris + uri
+        } catch (failure: Throwable) {
+            contentResolver.delete(uri, null, null)
+            AirBridgeState.status = failure.localizedMessage ?: "Could not add text."
+        }
+    }
+
     private fun sendPending(peer: AirBridgePeer) {
         val uris = AirBridgeState.pendingUris
         if (uris.isEmpty()) {
@@ -102,110 +134,93 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
-    LaunchedEffect(AirBridgeState.directShareRequested, AirBridgeState.pendingUris.size, AirBridgeState.peers.size) {
-        val peer = AirBridgeState.peers.firstOrNull()
-        if (AirBridgeState.directShareRequested && peer != null && AirBridgeState.pendingUris.isNotEmpty()) {
-            AirBridgeState.directShareRequested = false
-            onSend(peer)
+private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String) -> Unit) {
+    var selectedMode by remember { mutableStateOf("Wireless") }
+    var textDraft by remember { mutableStateOf(TextFieldValue("")) }
+    var category by remember { mutableStateOf("Files") }
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri -> try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {} }
+            AirBridgeState.pendingUris = (AirBridgeState.pendingUris + uris).distinct()
         }
     }
-    var clipboardSync by remember { mutableStateOf(false) }
-    var selectedMode by remember { mutableStateOf("Wireless") }
     MaterialTheme(colorScheme = darkColorScheme(background = Paper, surface = Card, primary = Color(0xFFF4F4F2), onPrimary = Color(0xFF101010), onSurface = Ink, onBackground = Ink)) {
         Surface(Modifier.fillMaxSize(), color = Paper) {
-            Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 26.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("AirBridge", fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                        Text("Moto Edge 50 Neo ↔ MacBook Air M1", fontSize = 12.sp, color = Muted)
+                        Text("AirBridge", fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                        Text(if (AirBridgeState.peers.isEmpty()) "Waiting for connection" else "Connected · MacBook Air M1", fontSize = 11.sp, color = Muted)
                     }
-                    Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(27.dp))
+                    Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(25.dp))
                 }
-                Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(5.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(13.dp)).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     listOf("Wireless", "Wired").forEach { mode ->
-                        val selected = selectedMode == mode
-                        Button(
-                            onClick = { selectedMode = mode },
-                            modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (selected) Ink else Card,
-                                contentColor = if (selected) Paper else Muted
-                            )
-                        ) { Text(if (mode == "Wireless") "Wireless · Wi-Fi" else "Wired · USB") }
+                        val active = selectedMode == mode
+                        Button(onClick = { selectedMode = mode }, modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (active) Ink else Card, contentColor = if (active) Paper else Muted),
+                            shape = RoundedCornerShape(10.dp)) { Text(if (mode == "Wireless") "Wireless · Wi-Fi" else "Wired · USB", fontSize = 11.sp) }
                     }
                 }
                 if (selectedMode == "Wireless") {
-                Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(20.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("CONNECTION", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
-                    Text(AirBridgeState.status, color = Ink, fontSize = 13.sp)
-                    if (AirBridgeState.transferActive) {
-                        Text(AirBridgeState.transferLabel, color = Muted, fontSize = 11.sp)
-                        LinearProgressIndicator(progress = { AirBridgeState.transferProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Ink, trackColor = Paper)
-                        Text("${(AirBridgeState.transferProgress * 100).toInt()}%", color = Muted, fontSize = 10.sp)
-                    }
-                    if (AirBridgeState.pendingUris.isNotEmpty()) {
-                        Text("${AirBridgeState.pendingUris.size} shared file(s) ready to send", color = Ink, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                    }
-                }
-                Text("YOUR MACBOOK AIR M1", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
-                val macPeer = AirBridgeState.peers.firstOrNull()
-                if (macPeer == null) {
-                    Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Muted, modifier = Modifier.size(28.dp))
-                        Text("Looking for your MacBook Air M1…", color = Ink, fontWeight = FontWeight.Medium)
-                        Text("Connect your MacBook Air M1 to this phone’s hotspot.", color = Muted, fontSize = 11.sp)
-                    }
-                } else {
-                    Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink)
-                        Spacer(Modifier.width(12.dp))
-                        Text("MacBook Air M1", color = Ink, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                        Button(onClick = { onSend(macPeer) }, enabled = AirBridgeState.pendingUris.isNotEmpty()) {
-                            Icon(Icons.Rounded.Send, contentDescription = null)
-                            Spacer(Modifier.width(5.dp))
-                            Text("Send")
+                    Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(17.dp)).padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.size(7.dp).background(if (AirBridgeState.peers.isEmpty()) Muted else Color(0xFF68C98A), RoundedCornerShape(50)))
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (AirBridgeState.peers.isEmpty()) "Waiting for connection" else "MacBook Air M1 connected", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Ink)
                         }
+                        if (AirBridgeState.transferActive) {
+                            Text(AirBridgeState.transferLabel, fontSize = 10.sp, color = Muted)
+                            LinearProgressIndicator(progress = { AirBridgeState.transferProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Ink, trackColor = Paper)
+                        }
+                        Text("SEND SOMETHING", fontSize = 9.sp, color = Muted, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+                            listOf("Files", "Photos", "Audio", "Apps").forEach { item ->
+                                TextButton(onClick = { category = item }) {
+                                    Text(item, fontSize = 10.sp, color = if (category == item) Ink else Muted, fontWeight = if (category == item) FontWeight.SemiBold else FontWeight.Normal)
+                                }
+                            }
+                        }
+                        Button(onClick = {
+                            val mime = when (category) {
+                                "Photos" -> arrayOf("image/*")
+                                "Audio" -> arrayOf("audio/*")
+                                "Apps" -> arrayOf("application/vnd.android.package-archive")
+                                else -> arrayOf("*/*")
+                            }
+                            picker.launch(mime)
+                        }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(11.dp)) {
+                            Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
+                            Spacer(Modifier.width(7.dp)); Text("Select @${category.lowercase()}", fontSize = 12.sp)
+                        }
+                        OutlinedTextField(value = textDraft, onValueChange = { textDraft = it }, modifier = Modifier.fillMaxWidth(),
+                            placeholder = { Text("Paste or type text to send", color = Muted, fontSize = 11.sp) }, minLines = 2, maxLines = 4,
+                            shape = RoundedCornerShape(11.dp), colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Ink, unfocusedTextColor = Ink, focusedBorderColor = Muted, unfocusedBorderColor = Color(0xFF383838), cursorColor = Ink))
+                        OutlinedButton(onClick = { onAddText(textDraft.text); textDraft = TextFieldValue("") }, enabled = textDraft.text.isNotBlank(), modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(11.dp)) {
+                            Icon(Icons.Rounded.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Add text to transfer", fontSize = 11.sp)
+                        }
+                        if (AirBridgeState.pendingUris.isNotEmpty()) {
+                            Text("@${AirBridgeState.pendingUris.size} item(s) selected", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(onClick = { AirBridgeState.pendingUris = emptyList() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Cancel", fontSize = 11.sp) }
+                                Button(onClick = { AirBridgeState.peers.firstOrNull()?.let(onSend) }, enabled = AirBridgeState.peers.isNotEmpty() && !AirBridgeState.transferActive, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(10.dp)) {
+                                    Icon(Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Send", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                        if (AirBridgeState.status.isNotBlank()) Text(AirBridgeState.status, fontSize = 9.sp, color = Muted)
                     }
-                }
-                Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = Ink)
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Clipboard sync", color = Ink, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                        Text("Not implemented yet", color = Muted, fontSize = 10.sp)
-                    }
-                    Switch(checked = clipboardSync, onCheckedChange = { clipboardSync = it }, enabled = false)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Rounded.FolderOpen, tint = Muted, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(7.dp))
                     Text("Received files are saved to Downloads/AirBridge", color = Muted, fontSize = 10.sp)
-                }
-                Spacer(Modifier.weight(1f, fill = false))
                 } else {
-                    Column(
-                        Modifier.fillMaxWidth().background(Card, RoundedCornerShape(20.dp)).padding(22.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(34.dp))
-                        Text("USB file transfer", color = Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                        Text(
-                            "Connect your phone to your Mac with a data-capable USB cable. Unlock the phone and choose File transfer / Android Auto in the USB notification.",
-                            color = Muted, fontSize = 12.sp
-                        )
-                        Text(
-                            "Open AirBridge on your Mac and choose Wired USB to browse phone storage and transfer files. The Mac uses MTP; ADB is not required.",
-                            color = Muted, fontSize = 12.sp
-                        )
-                        Text("Keep the phone unlocked while browsing.", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(17.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(30.dp))
+                        Text("USB file transfer", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                        Text("Connect your phone to your Mac with a data-capable cable. Unlock it and choose File transfer / Android Auto in the USB notification.", color = Muted, fontSize = 11.sp)
+                        Text("Open AirBridge on your Mac and choose Wired USB to browse phone storage. MTP is used; ADB is not required.", color = Muted, fontSize = 11.sp)
                     }
                 }
-                Text(
-                    if (selectedMode == "Wireless") "LOCAL NETWORK · SHA-256 INTEGRITY · NOT ENCRYPTED" else "USB MTP · NO ADB",
-                    color = Muted, fontSize = 9.sp, letterSpacing = 1.sp
-                )
+                Text(if (selectedMode == "Wireless") "LOCAL NETWORK · SHA-256 INTEGRITY · NOT ENCRYPTED" else "USB MTP · NO ADB", color = Muted, fontSize = 8.sp, letterSpacing = 0.8.sp)
             }
         }
     }
