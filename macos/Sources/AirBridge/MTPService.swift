@@ -52,7 +52,7 @@ enum MTPService {
     private static func run(_ name: String, _ arguments: [String]) throws -> String {
         let executable = try tool(name)
         let process = Process()
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("airbridge-mtp-\\(UUID().uuidString).log")
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("airbridge-mtp-\(UUID().uuidString).log")
         guard FileManager.default.createFile(atPath: outputURL.path, contents: nil), let outputHandle = try? FileHandle(forWritingTo: outputURL) else {
             throw MTPError.commandFailed("Could not prepare MTP command output.")
         }
@@ -75,7 +75,7 @@ enum MTPService {
         if process.isRunning {
             process.terminate()
             process.waitUntilExit()
-            throw MTPError.commandFailed("\\(name) timed out. Check the USB connection and try again.")
+            throw MTPError.commandFailed("\(name) timed out. Check the USB connection and try again.")
         }
         try? outputHandle.synchronize()
         let data = (try? Data(contentsOf: outputURL)) ?? Data()
@@ -151,7 +151,7 @@ enum MTPService {
             throw MTPError.commandFailed("A file already exists at the selected destination. Choose another name to avoid overwriting it.")
         }
         let temporary = destination.deletingLastPathComponent()
-            .appendingPathComponent(".\\(destination.lastPathComponent).airbridge-\\(UUID().uuidString).part")
+            .appendingPathComponent(".\(destination.lastPathComponent).airbridge-\(UUID().uuidString).part")
         defer { try? FileManager.default.removeItem(at: temporary) }
         _ = try run("mtp-getfile", [String(file.id), temporary.path])
         guard FileManager.default.fileExists(atPath: temporary.path) else {
