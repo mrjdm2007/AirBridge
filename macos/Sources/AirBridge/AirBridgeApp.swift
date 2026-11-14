@@ -22,284 +22,235 @@ struct AirBridgePopover: View {
     @StateObject private var mtp = MTPController()
     @StateObject private var lan = LANTransferController()
     @State private var showingImporter = false
-    @State private var showingLANImporter = false
-    @State private var lanTarget: LANPeer?
-    @State private var clipboardEnabled = false
+    @State private var showingMTPImporter = false
     @State private var selectedMode = "Wireless"
+    @State private var selectedURLs: [URL] = []
+    @State private var showHistory = false
+    @State private var dropError: String?
 
-    @ViewBuilder
-    private func modeCard(title: String, subtitle: String, symbol: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                Image(systemName: symbol).font(.system(size: 18, weight: .medium))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 13, weight: .semibold))
-                    Text(subtitle).font(.system(size: 10)).foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                if selected { Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary) }
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(selected ? Color.primary.opacity(0.12) : Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(selected ? Color.primary.opacity(0.35) : Color.clear, lineWidth: 1))
+    private var selectedBytes: Int64 {
+        selectedURLs.reduce(Int64(0)) { total, url in
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+            return total + size
         }
-        .buttonStyle(.plain)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("AirBridge").font(.system(size: 23, weight: .semibold))
-                    Text("Your MacBook Air M1 ↔ Moto Edge 50 Neo")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "iphone.and.arrow.right.inward")
-                    .font(.system(size: 24, weight: .regular))
-            }
-
+        VStack(spacing: 12) {
             HStack(spacing: 10) {
-                modeCard(title: "Wireless", subtitle: "Local network", symbol: "wifi", selected: selectedMode == "Wireless") {
-                    selectedMode = "Wireless"
-                }
-                modeCard(title: "Wired", subtitle: "USB · MTP", symbol: "cable.connector", selected: selectedMode == "Wired") {
-                    selectedMode = "Wired"
-                }
-            }
-
-            if selectedMode == "Wireless" {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Text("YOUR MOTO EDGE 50 NEO")
-                        .font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(lan.status).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                    if lan.isTransferring {
-                        ProgressView(value: lan.progress)
-                        Text("\(Int(lan.progress * 100))% sent").font(.system(size: 9)).foregroundStyle(.tertiary)
-                        Button("Cancel") { lan.cancelTransfer() }
-                            .font(.system(size: 9)).disabled(!lan.canCancelTransfer)
-                    }
-                }
-                if let phone = lan.peers.first {
-                    HStack {
-                        Image(systemName: "iphone").foregroundStyle(.secondary)
-                        Text("Moto Edge 50 Neo").font(.system(size: 12, weight: .medium))
-                        Spacer()
-                        Button("Send file…") {
-                            lanTarget = phone
-                            showingLANImporter = true
-                        }
-                        .buttonStyle(.borderedProminent)
-                    }
-                } else {
-                    Text("Waiting for your Moto Edge 50 Neo. Keep AirBridge open on the phone and connected to its hotspot.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                if let error = lan.error {
-                    Text(error).font(.system(size: 10)).foregroundStyle(.red).textSelection(.enabled)
-                }
-            }
-            .padding(12)
-            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
-
-            } else {
-            HStack(spacing: 10) {
-                Image(systemName: mtp.isConnected ? "cable.connector" : "cable.connector.slash")
-                    .font(.system(size: 18))
+                Image(systemName: "arrow.up.arrow.down.square.fill").font(.system(size: 20))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(mtp.isConnected ? mtp.deviceName : "No MTP device detected")
-                        .font(.system(size: 13, weight: .medium))
-                    Text(mtp.isConnected ? "USB · Media Transfer Protocol" : "Connect your phone and choose File Transfer")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button {
-                    mtp.refresh()
-                } label: {
-                    if mtp.isLoading {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                }
-                .disabled(mtp.isLoading || mtp.isTransferring)
-                .buttonStyle(.bordered)
-            }
-            .padding(13)
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
-
-            if !mtp.isConnected {
-                VStack(spacing: 10) {
-                    Image(systemName: "cable.connector").font(.system(size: 28)).foregroundStyle(.secondary)
-                    Text("Connect your Android").font(.system(size: 14, weight: .medium))
-                    Text("Unlock your phone, connect it with a data-capable USB cable, then select “File transfer / Android Auto” in the USB notification. Tap Refresh.")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 300)
-                }
-                .frame(maxWidth: .infinity, minHeight: 190)
-            } else {
-                HStack {
-                    Text("PHONE FILES")
-                        .font(.system(size: 10, weight: .semibold))
-                        .tracking(0.8).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(mtp.files.count) files")
-                        .font(.system(size: 10)).foregroundStyle(.tertiary)
-                }
-
-                List(selection: $mtp.selection) {
-                    ForEach(mtp.files) { file in
-                        HStack(spacing: 10) {
-                            Image(systemName: "doc")
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(file.name).lineLimit(1)
-                                    .font(.system(size: 12, weight: .medium))
-                                Text(ByteCountFormatter.string(fromByteCount: file.size, countStyle: .file))
-                                    .font(.system(size: 10)).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button {
-                                mtp.download(file)
-                            } label: {
-                                Image(systemName: "arrow.down.to.line")
-                            }
-                            .buttonStyle(.borderless)
-                            .help("Save to Downloads")
-                            .disabled(mtp.isTransferring)
-                        }
-                        .tag(file.id)
-                    }
-                }
-                .listStyle(.inset)
-                .frame(minHeight: 180)
-                .overlay {
-                    if mtp.files.isEmpty && !mtp.isLoading {
-                        VStack(spacing: 8) {
-                            Image(systemName: "folder").font(.system(size: 24)).foregroundStyle(.secondary)
-                            Text("No files found").font(.system(size: 12)).foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-
-            HStack(spacing: 10) {
-                Button {
-                    showingImporter = true
-                } label: {
-                    Label("Send files to phone", systemImage: "arrow.up.to.line")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(!mtp.isConnected || mtp.isTransferring)
-
-                Button {
-                    mtp.refresh()
-                } label: {
-                    Label("Reload phone files", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!mtp.isConnected || mtp.isTransferring || mtp.isLoading)
-            }
-
-            if mtp.isTransferring {
-                ProgressView(mtp.status)
-                    .font(.system(size: 11))
-            } else if !mtp.status.isEmpty {
-                Text(mtp.status)
-                    .font(.system(size: 11)).foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-
-            if let error = mtp.error {
-                Text(error)
-                    .font(.system(size: 11)).foregroundStyle(.red)
-                    .textSelection(.enabled)
-            }
-
-            }
-
-            if selectedMode == "Wireless" {
-            Divider()
-
-            HStack {
-                Text("RECENT WI-FI TRANSFERS")
-                    .font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
-                Spacer()
-                Button("Clear") { lan.clearHistory() }
-                    .font(.system(size: 10)).disabled(lan.history.isEmpty)
-            }
-            if lan.history.isEmpty {
-                Text("Completed Wi-Fi transfers will appear here.")
-                    .font(.system(size: 10)).foregroundStyle(.secondary)
-            } else {
-                ForEach(lan.history.prefix(4)) { item in
-                    HStack(spacing: 8) {
-                        Image(systemName: item.direction == "Sent" ? "arrow.up.circle" : "arrow.down.circle")
-                            .foregroundColor(item.succeeded ? Color.secondary : Color.red)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(item.filename).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                            Text("\(item.direction) · \(item.peer) · \(ByteCountFormatter.string(fromByteCount: Int64(clamping: item.bytes), countStyle: .file)) · \(item.date.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                        Image(systemName: "checkmark.circle.fill").font(.system(size: 10)).foregroundStyle(.green)
-                    }
-                }
-            }
-
-            Toggle(isOn: $clipboardEnabled) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Clipboard sync").font(.system(size: 12, weight: .medium))
-                    Text("Wi-Fi clipboard sync is not implemented yet")
+                    Text("AirBridge").font(.system(size: 17, weight: .semibold))
+                    Text(lan.peers.isEmpty ? "Waiting for connection" : "Connected · Moto Edge 50 Neo")
                         .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
-            }
-            .toggleStyle(.switch)
-            .disabled(true)
-
-            HStack {
-                Text("LOCAL NETWORK · NOT ENCRYPTED")
                 Spacer()
-                Text("WIRELESS")
+                Button { showHistory.toggle() } label: {
+                    Image(systemName: "clock").font(.system(size: 13, weight: .medium))
+                }
+                .buttonStyle(.plain).help(showHistory ? "Hide history" : "Show history")
             }
-            .font(.system(size: 8, weight: .semibold, design: .rounded))
-            .tracking(0.8).foregroundStyle(.tertiary)
+
+            HStack(spacing: 6) {
+                modeButton("Wireless", icon: "wifi")
+                modeButton("Wired", icon: "cable.connector")
+            }
+
+            if showHistory {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack {
+                        Text("RECENT TRANSFERS").font(.system(size: 9, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Clear") { lan.clearHistory() }.font(.system(size: 10)).buttonStyle(.plain)
+                    }
+                    if lan.history.isEmpty {
+                        Text("No transfers yet").font(.system(size: 11)).foregroundStyle(.secondary)
+                    } else {
+                        ForEach(lan.history.prefix(8)) { item in
+                            HStack(spacing: 8) {
+                                Image(systemName: item.direction == "Sent" ? "arrow.up.circle" : "arrow.down.circle").foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.filename).font(.system(size: 10, weight: .medium)).lineLimit(1)
+                                    Text(item.date.formatted(date: .omitted, time: .shortened)).font(.system(size: 9)).foregroundStyle(.tertiary)
+                                }
+                                Spacer()
+                                Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: item.bytes), countStyle: .file))
+                                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                }
+                .padding(10).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+            } else if selectedMode == "Wireless" {
+                VStack(spacing: 9) {
+                    HStack(spacing: 7) {
+                        Circle().fill(lan.peers.isEmpty ? Color.secondary : Color.green).frame(width: 6, height: 6)
+                        Text(lan.peers.isEmpty ? "Waiting for connection" : "Moto Edge 50 Neo connected")
+                            .font(.system(size: 11, weight: .medium))
+                        Spacer()
+                    }
+                    if lan.isTransferring {
+                        ProgressView(value: lan.progress)
+                        HStack {
+                            Text(lan.status).lineLimit(1)
+                            Spacer()
+                            Button("Cancel") { lan.cancelTransfer() }.disabled(!lan.canCancelTransfer)
+                        }.font(.system(size: 9)).foregroundStyle(.secondary)
+                    } else {
+                        VStack(spacing: 6) {
+                            Image(systemName: "tray.and.arrow.down").font(.system(size: 24)).foregroundStyle(.secondary)
+                            Text("Drop files here or choose files").font(.system(size: 11, weight: .medium))
+                            Text("Files · Photos · Audio · Apps").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 13)
+                        .contentShape(RoundedRectangle(cornerRadius: 11))
+                        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                            for provider in providers {
+                                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                                    guard let url else { return }
+                                    DispatchQueue.main.async { selectedURLs.append(url) }
+                                }
+                            }
+                            return true
+                        }
+                        .onPasteCommand(of: [.plainText]) { providers in
+                            for provider in providers {
+                                _ = provider.loadObject(ofClass: String.self) { value, _ in
+                                    guard let value, !value.isEmpty else { return }
+                                    let url = FileManager.default.temporaryDirectory.appendingPathComponent("AirBridge-Text-\(UUID().uuidString).txt")
+                                    do {
+                                        try value.data(using: .utf8)?.write(to: url, options: .atomic)
+                                        DispatchQueue.main.async { selectedURLs.append(url) }
+                                    } catch { DispatchQueue.main.async { dropError = error.localizedDescription } }
+                                }
+                            }
+                        }
+                    }
+                    if !selectedURLs.isEmpty {
+                        Divider()
+                        ForEach(Array(selectedURLs.enumerated()), id: \.offset) { index, url in
+                            HStack(spacing: 7) {
+                                Image(systemName: iconFor(url)).foregroundStyle(.secondary)
+                                Text(url.lastPathComponent).font(.system(size: 10)).lineLimit(1)
+                                Spacer()
+                                Text(ByteCountFormatter.string(fromByteCount: (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0, countStyle: .file))
+                                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                                Button { selectedURLs.remove(at: index) } label: {
+                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    if let error = dropError ?? lan.error {
+                        Text(error).font(.system(size: 9)).foregroundStyle(.red).lineLimit(2)
+                    }
+                }
+                .padding(11).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+            } else {
+                VStack(spacing: 9) {
+                    HStack {
+                        Image(systemName: mtp.isConnected ? "cable.connector" : "cable.connector.slash")
+                        Text(mtp.isConnected ? "USB · MTP connected" : "Waiting for USB connection")
+                        Spacer()
+                        Button { mtp.refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain)
+                    }.font(.system(size: 11, weight: .medium))
+                    if mtp.isConnected {
+                        Text("\(mtp.files.count) phone files available").font(.system(size: 10)).foregroundStyle(.secondary)
+                        Button("Select files to send") { showingMTPImporter = true }.buttonStyle(.bordered)
+                        ForEach(mtp.files.prefix(5)) { file in
+                            HStack {
+                                Text(file.name).font(.system(size: 10)).lineLimit(1)
+                                Spacer()
+                                Button { mtp.download(file) } label: { Image(systemName: "arrow.down.to.line") }.buttonStyle(.plain)
+                            }
+                        }
+                    } else {
+                        Text("Unlock your phone, connect by USB and choose File Transfer.").font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
+                    if !mtp.status.isEmpty { Text(mtp.status).font(.system(size: 9)).foregroundStyle(.secondary) }
+                    if let error = mtp.error { Text(error).font(.system(size: 9)).foregroundStyle(.red) }
+                }.padding(11).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    if selectedMode == "Wireless" { showingImporter = true }
+                    else { showingMTPImporter = true }
+                } label: {
+                    Label("Select files", systemImage: "plus")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .disabled(selectedMode == "Wireless" && lan.isTransferring)
+            }
+            if selectedMode == "Wireless" {
+                HStack(spacing: 8) {
+                    Text(selectedURLs.isEmpty ? "Nothing selected" : "\(selectedURLs.count) items · \(ByteCountFormatter.string(fromByteCount: selectedBytes, countStyle: .file))")
+                        .font(.system(size: 9, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Cancel") { selectedURLs.removeAll(); dropError = nil }
+                        .buttonStyle(.plain).font(.system(size: 10)).disabled(selectedURLs.isEmpty || lan.isTransferring)
+                    Button("Send") {
+                        guard let peer = lan.peers.first else { return }
+                        lan.send(selectedURLs, to: peer)
+                        selectedURLs.removeAll()
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
+                    .disabled(selectedURLs.isEmpty || lan.peers.isEmpty || lan.isTransferring)
+                }
+            } else {
+                HStack {
+                    Text("USB MTP · NO ADB").font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(.tertiary)
+                    Spacer()
+                    Text("AIRBRIDGE").font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(.tertiary)
+                }
             }
         }
-        .padding(18)
-        .frame(width: 480, height: 650)
+        .padding(12)
+        .frame(width: 350)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .preferredColorScheme(.dark)
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): selectedURLs.append(contentsOf: urls)
+            case .failure(let failure): dropError = failure.localizedDescription
+            }
+        }
+        .fileImporter(isPresented: $showingMTPImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): mtp.upload(urls)
             case .failure(let failure): mtp.error = failure.localizedDescription
             }
         }
-        .fileImporter(isPresented: $showingLANImporter, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first, let peer = lanTarget { lan.send(url, to: peer) }
-            case .failure(let failure): lan.error = failure.localizedDescription
-            }
-        }
-        .onAppear {
-            mtp.refresh()
-            lan.start()
-        }
+        .onAppear { lan.start(); mtp.refresh() }
         .task {
-            // MTP has no portable hot-plug notification API through libmtp's CLI.
-            // Poll gently so connecting/unlocking the phone is detected without a manual refresh.
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
-                if !Task.isCancelled && !mtp.isTransferring && !mtp.isLoading {
-                    mtp.refresh()
-                }
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                if !Task.isCancelled && selectedMode == "Wired" && !mtp.isTransferring && !mtp.isLoading { mtp.refresh() }
             }
         }
+    }
+
+    private func modeButton(_ title: String, icon: String) -> some View {
+        Button { selectedMode = title } label: {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                Text(title)
+            }
+            .font(.system(size: 10, weight: .medium))
+            .frame(maxWidth: .infinity).padding(.vertical, 7)
+            .background(selectedMode == title ? Color.primary.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 9))
+        }.buttonStyle(.plain)
+    }
+
+    private func iconFor(_ url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+        if ["jpg","jpeg","png","heic","webp","gif"].contains(ext) { return "photo" }
+        if ["mp3","m4a","wav","flac","aac","ogg"].contains(ext) { return "waveform" }
+        if ["apk","app","dmg","pkg"].contains(ext) { return "app" }
+        if ext == "txt" { return "text.alignleft" }
+        return "doc"
     }
 }
 

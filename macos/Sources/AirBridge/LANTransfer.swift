@@ -110,8 +110,9 @@ final class LANTransferController: ObservableObject {
         browser.start(queue: queue)
     }
 
-    func send(_ file: URL, to peer: LANPeer) {
-        status = "Sending \(file.lastPathComponent)…"
+    func send(_ files: [URL], to peer: LANPeer) {
+        guard !files.isEmpty else { return }
+        status = "Preparing \(files.count) item(s)…"
         error = nil
         progress = 0
         isTransferring = true
@@ -121,19 +122,27 @@ final class LANTransferController: ObservableObject {
         let cancellationFlag = cancellation
         let transferQueue = queue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let accessed = file.startAccessingSecurityScopedResource()
-            defer { if accessed { file.stopAccessingSecurityScopedResource() } }
             do {
-                try Self.sendFile(file, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
-                    Task { @MainActor [weak self] in self?.progress = total == 0 ? 1 : Double(sent) / Double(total) }
+                let sizes = files.map { (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? NSNumber)?.uint64Value ?? 0 }
+                let totalBytes = max(1, sizes.reduce(UInt64(0), +))
+                var completed: UInt64 = 0
+                for (index, file) in files.enumerated() {
+                    if cancellationFlag.get() { throw LANError.cancelled }
+                    let accessed = file.startAccessingSecurityScopedResource()
+                    defer { if accessed { file.stopAccessingSecurityScopedResource() } }
+                    try Self.sendFile(file, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
+                        let overall = Double(completed + sent) / Double(totalBytes)
+                        Task { @MainActor [weak self] in self?.progress = min(1, overall) }
+                    }
+                    completed += sizes[index]
+                    Task { @MainActor [weak self] in self?.status = "Sent \(index + 1) of \(files.count)" }
                 }
                 Task { @MainActor in
                     self?.progress = 1
                     self?.isTransferring = false
                     self?.canCancelTransfer = false
-                    self?.status = "Sent \(file.lastPathComponent) to \(peer.id)"
-                    let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.uint64Value ?? 0
-                    self?.record(TransferHistoryEntry(id: UUID(), filename: file.lastPathComponent, direction: "Sent", peer: peer.id, bytes: size, date: Date(), succeeded: true))
+                    self?.status = "Sent \(files.count) item(s) to \(peer.id)"
+                    self?.record(TransferHistoryEntry(id: UUID(), filename: files.count == 1 ? files[0].lastPathComponent : "\(files.count) items", direction: "Sent", peer: peer.id, bytes: totalBytes, date: Date(), succeeded: true))
                 }
             } catch {
                 Task { @MainActor in
