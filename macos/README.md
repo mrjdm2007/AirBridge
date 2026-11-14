@@ -33,6 +33,8 @@ The macOS CI installs libmtp before compiling and packages the app. The current 
 
 ## Current scope
 
-Implemented here: MTP device detection through libmtp's file listing, phone file listing, Mac-to-phone upload, and phone-to-Mac download.
+Implemented here: MTP device detection through libmtp, phone file listing, Mac-to-phone upload, and phone-to-Mac download. The app also has a separate Wi-Fi discovery and transfer prototype; that transport is currently plaintext and unauthenticated.
 
-Not implemented yet: Wi-Fi discovery/transfer, pairing, clipboard synchronization, background reconnection, transfer resume, and Android-side AirBridge integration. MTP is file transfer only. This is not yet a complete AirBridge release.
+MTP requirements: macOS host, Homebrew `libmtp`, unlocked Android device, and USB File Transfer mode. The MTP implementation is not a replacement for the full OpenMTP feature set: folder navigation, robust folder upload/download, and device-specific hardware validation remain incomplete.
+
+Wi-Fi pairing/authentication/encryption, clipboard synchronization, resumable transfers, and hardware validation remain incomplete. Do not use Wi-Fi transfer for sensitive files until authenticated encryption is implemented.
