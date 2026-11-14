@@ -82,6 +82,7 @@ object AirBridgeProtocol {
                 output.write(nameBytes)
                 temp.inputStream().use { it.copyTo(output, 64 * 1024) }
                 output.flush()
+                require(socket.getInputStream().read() == 0x06) { "The receiving device did not confirm the file." }
             }
             return name
         } finally {
