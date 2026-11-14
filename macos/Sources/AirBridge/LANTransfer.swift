@@ -64,7 +64,7 @@ final class LANTransferController: ObservableObject {
         do {
             let listener = try NWListener(using: .tcp)
             listener.service = NWListener.Service(
-                name: Host.current().localizedName ?? "AirBridge Mac",
+                name: "AirBridge Mac",
                 type: "_airbridge._tcp.",
                 domain: "local.",
                 txtRecord: nil
@@ -91,13 +91,14 @@ final class LANTransferController: ObservableObject {
         let browser = NWBrowser(for: .bonjour(type: "_airbridge._tcp.", domain: "local."), using: .tcp)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> LANPeer? in
-                guard case .service(let name, _, _, _) = result.endpoint else { return nil }
-                return LANPeer(id: name, endpoint: result.endpoint)
+                guard case .service(let name, _, _, _) = result.endpoint,
+                      name == "AirBridge Android" else { return nil }
+                return LANPeer(id: "Moto Edge 50 Neo", endpoint: result.endpoint)
             }
             Task { @MainActor in
                 self?.peers = found
-                if found.isEmpty { self?.status = "Waiting for Android on the same local network" }
-                else { self?.status = "Found \(found.count) device(s) on Wi-Fi" }
+                if found.isEmpty { self?.status = "Waiting for your Moto Edge 50 Neo on your phone hotspot" }
+                else { self?.status = "Moto Edge 50 Neo connected over Wi-Fi" }
             }
         }
         browser.stateUpdateHandler = { [weak self] state in
