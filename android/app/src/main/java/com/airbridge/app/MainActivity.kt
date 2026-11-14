@@ -110,7 +110,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                 }
                 Text("DEVICES ON THIS NETWORK", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Muted, letterSpacing = 1.4.sp)
                 if (AirBridgeState.peers.isEmpty()) {
-                    Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(18.dp)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Rounded.Computer, contentDescription = null, tint = Muted, modifier = Modifier.size(28.dp))
                         Text("Looking for your Mac…", color = Ink, fontWeight = FontWeight.Medium)
                         Text("Keep both devices on the same Wi-Fi or local network.", color = Muted, fontSize = 11.sp)
@@ -118,7 +118,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                 } else {
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
                         items(AirBridgeState.peers) { peer ->
-                            Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(16.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(16.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink)
                                 Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
@@ -134,7 +134,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(18.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().background(Card, RoundedCornerShape(18.dp)).padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Rounded.ContentPaste, contentDescription = null, tint = Ink)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
