@@ -28,7 +28,7 @@ object AirBridgeState {
     var transferProgress by androidx.compose.runtime.mutableFloatStateOf(0f)
     var transferActive by androidx.compose.runtime.mutableStateOf(false)
     var transferLabel by androidx.compose.runtime.mutableStateOf("")
-    var pendingUris by androidx.compose.runtime.mutableStateOf<List<android.net.Uri>>(emptyList())
+    var pendingUris by androidx.compose.runtime.mutableStateOf<List<android.net.Uri>>(emptyList())\n    var directShareRequested by androidx.compose.runtime.mutableStateOf(false)
     private val main = Handler(Looper.getMainLooper())
     fun update(block: () -> Unit) { main.post { block() } }
 }
@@ -166,7 +166,12 @@ class NetworkTransferService : Service() {
                 }
             }
             override fun onServiceLost(info: NsdServiceInfo) {
-                AirBridgeState.update { AirBridgeState.peers.removeAll { it.name == info.serviceName } }
+                AirBridgeState.update {
+                    AirBridgeState.peers.removeAll { it.name == info.serviceName }
+                    if (AirBridgeState.peers.isEmpty()) {
+                        getSystemService(android.content.pm.ShortcutManager::class.java)?.removeDynamicShortcuts(listOf("airbridge-mac"))
+                    }
+                }
             }
             override fun onDiscoveryStopped(type: String) {}
             override fun onStartDiscoveryFailed(type: String, errorCode: Int) { AirBridgeState.update { AirBridgeState.status = "Discovery failed ($errorCode)" } }
@@ -174,6 +179,26 @@ class NetworkTransferService : Service() {
         }
         discovery = listener
         nsd.discoverServices("_airbridge._tcp.", NsdManager.PROTOCOL_DNS_SD, listener)
+    }
+
+    private fun publishMacShareShortcut() {
+        if (Build.VERSION.SDK_INT < 25) return
+        val shortcut = android.content.pm.ShortcutInfo.Builder(this, "airbridge-mac")
+            .setShortLabel("MacBook Air M1")
+            .setLongLabel("Send to MacBook Air M1")
+            .setIcon(android.graphics.drawable.Icon.createWithResource(this, R.mipmap.ic_launcher))
+            .setIntent(Intent(this, MainActivity::class.java).apply {
+                action = Intent.ACTION_SEND
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            })
+            .setCategories(setOf("com.airbridge.app.SHARE_TARGET"))
+            .setLongLived(true)
+            .build()
+        try {
+            getSystemService(android.content.pm.ShortcutManager::class.java)?.pushDynamicShortcut(shortcut)
+        } catch (failure: Exception) {
+            AirBridgeState.status = "Share target unavailable: ${failure.localizedMessage ?: "system limit"}"
+        }
     }
 
     override fun onDestroy() {
