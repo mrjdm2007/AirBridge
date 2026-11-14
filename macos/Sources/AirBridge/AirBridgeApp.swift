@@ -238,6 +238,7 @@ struct AirBridgePopover: View {
         }
         .padding(18)
         .frame(width: 480, height: 650)
+        .preferredColorScheme(.dark)
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): mtp.upload(urls)
