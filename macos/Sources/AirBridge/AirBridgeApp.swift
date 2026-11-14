@@ -52,7 +52,7 @@ struct AirBridgePopover: View {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("AirBridge").font(.system(size: 23, weight: .semibold))
-                    Text("Direct transfers between your Mac and Android")
+                    Text("Your MacBook Air M1 ↔ Moto Edge 50 Neo")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -72,7 +72,7 @@ struct AirBridgePopover: View {
             if selectedMode == "Wireless" {
             VStack(alignment: .leading, spacing: 9) {
                 HStack {
-                    Text("WI-FI DEVICES")
+                    Text("YOUR MOTO EDGE 50 NEO")
                         .font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
                     Spacer()
                     Text(lan.status).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
@@ -84,7 +84,7 @@ struct AirBridgePopover: View {
                     }
                 }
                 if lan.peers.isEmpty {
-                    Text("Waiting for your Android device on the same local network.")
+                    Text("Open AirBridge on your Moto Edge 50 Neo and keep it on your phone hotspot.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 } else {
                     ForEach(lan.peers) { peer in
