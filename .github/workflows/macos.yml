@@ -12,6 +12,8 @@ jobs:
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
+      - name: Install MTP host tools
+        run: brew install libmtp
       - name: Build Swift package
         working-directory: macos
         run: swift build -c release
