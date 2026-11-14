@@ -2,6 +2,19 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private func airBridgeItemSize(_ url: URL) -> Int64 {
+    if url.hasDirectoryPath, let enumerator = FileManager.default.enumerator(at: url, includingPropertiesForKeys: [.fileSizeKey], options: [.skipsHiddenFiles]) {
+        var total: Int64 = 0
+        for case let child as URL in enumerator {
+            if let values = try? child.resourceValues(forKeys: [.fileSizeKey]), let size = values.fileSize {
+                total += Int64(size)
+            }
+        }
+        return total
+    }
+    return (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
+}
+
 @main
 struct AirBridgeApp: App {
     var body: some Scene {
@@ -25,10 +38,7 @@ struct AirBridgePopover: View {
     @State private var dropError: String?
 
     private var selectedBytes: Int64 {
-        selectedURLs.reduce(Int64(0)) { total, url in
-            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0
-            return total + size
-        }
+        selectedURLs.reduce(Int64(0)) { $0 + airBridgeItemSize($1) }
     }
 
     var body: some View {

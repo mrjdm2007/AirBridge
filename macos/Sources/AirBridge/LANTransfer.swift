@@ -123,7 +123,7 @@ final class LANTransferController: ObservableObject {
         let transferQueue = queue
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
-                let sizes = files.map { (try? FileManager.default.attributesOfItem(atPath: $0.path)[.size] as? NSNumber)?.uint64Value ?? 0 }
+                let sizes = files.map { UInt64(max(0, airBridgeItemSize($0))) }
                 let totalBytes = max(1, sizes.reduce(UInt64(0), +))
                 let completedBytes = LockedBox<UInt64>(0)
                 for (index, file) in files.enumerated() {
