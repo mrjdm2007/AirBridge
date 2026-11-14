@@ -87,7 +87,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("AirBridge", fontSize = 29.sp, fontWeight = FontWeight.SemiBold, color = Ink)
-                        Text("Private transfers on your local network", fontSize = 12.sp, color = Muted)
+                        Text("Direct transfers on your local network", fontSize = 12.sp, color = Muted)
                     }
                     Icon(Icons.Rounded.Computer, contentDescription = null, tint = Ink, modifier = Modifier.size(27.dp))
                 }
@@ -129,7 +129,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text("Clipboard sync", color = Ink, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                        Text("Requires foreground approval; not active yet", color = Muted, fontSize = 10.sp)
+                        Text("Not implemented yet", color = Muted, fontSize = 10.sp)
                     }
                     Switch(checked = clipboardSync, onCheckedChange = { clipboardSync = it }, enabled = false)
                 }
@@ -139,7 +139,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit) {
                     Text("Received files are saved to Downloads/AirBridge", color = Muted, fontSize = 10.sp)
                 }
                 Spacer(Modifier.weight(1f, fill = false))
-                Text("DIRECT · LOCAL NETWORK · SHA-256 CHECKED", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
+                Text("LOCAL NETWORK · SHA-256 INTEGRITY · NOT ENCRYPTED", color = Muted, fontSize = 9.sp, letterSpacing = 1.sp)
             }
         }
     }
