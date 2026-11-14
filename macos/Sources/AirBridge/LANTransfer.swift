@@ -26,6 +26,9 @@ final class LANTransferController: ObservableObject {
     @Published private(set) var progress: Double = 0
     @Published private(set) var isTransferring = false
     @Published private(set) var history: [TransferHistoryEntry] = []
+    @Published private(set) var canCancelTransfer = false
+    private var activeConnection = LockedBox<NWConnection?>(nil)
+    private let cancellation = LockedBox(false)
 
     private let historyKey = "airbridge.lan.transfer-history.v1"
     private let queue = DispatchQueue(label: "com.airbridge.lan", qos: .userInitiated)
@@ -111,29 +114,45 @@ final class LANTransferController: ObservableObject {
         error = nil
         progress = 0
         isTransferring = true
+        canCancelTransfer = true
+        cancellation.set(false)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let accessed = file.startAccessingSecurityScopedResource()
             defer { if accessed { file.stopAccessingSecurityScopedResource() } }
             do {
-                try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global()) { sent, total in
+                try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global(), connectionBox: self?.activeConnection ?? LockedBox<NWConnection?>(nil), isCancelled: { self?.cancellation.get() ?? true }) { sent, total in
                     Task { @MainActor in self?.progress = total == 0 ? 1 : Double(sent) / Double(total) }
                 }
                 Task { @MainActor in
                     self?.progress = 1
                     self?.isTransferring = false
+                    self?.canCancelTransfer = false
                     self?.status = "Sent \(file.lastPathComponent) to \(peer.id)"
                     let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.uint64Value ?? 0
                     self?.record(TransferHistoryEntry(id: UUID(), filename: file.lastPathComponent, direction: "Sent", peer: peer.id, bytes: size, date: Date(), succeeded: true))
                 }
             } catch {
-                Task { @MainActor in self?.isTransferring = false; self?.error = error.localizedDescription }
+                Task { @MainActor in
+                    self?.isTransferring = false
+                    self?.canCancelTransfer = false
+                    if self?.cancellation.get() == true { self?.status = "Transfer cancelled"; self?.error = nil }
+                    else { self?.error = error.localizedDescription }
+                }
             }
         }
     }
 
-    nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue, onProgress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
+    func cancelTransfer() {
+        guard isTransferring else { return }
+        cancellation.set(true)
+        activeConnection.get()?.cancel()
+        status = "Cancelling transfer…"
+    }
+
+    nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue, connectionBox: LockedBox<NWConnection?>, isCancelled: @escaping @Sendable () -> Bool, onProgress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
         let connection = NWConnection(to: endpoint, using: .tcp)
-        defer { connection.cancel() }
+        connectionBox.set(connection)
+        defer { connectionBox.set(nil); connection.cancel() }
         let ready = DispatchSemaphore(value: 0)
         let finished = DispatchSemaphore(value: 0)
         let connectionError = LockedBox<NWError?>(nil)
@@ -179,6 +198,7 @@ final class LANTransferController: ObservableObject {
         var sent: UInt64 = 0
         onProgress(0, size)
         while true {
+            if isCancelled() { throw LANError.cancelled }
             let chunk = try input.read(upToCount: 256 * 1024) ?? Data()
             if chunk.isEmpty { break }
             try sendData(chunk, through: connection)
@@ -342,7 +362,7 @@ private final class IncomingParser: @unchecked Sendable {
 }
 
 private enum LANError: LocalizedError {
-    case timeout, invalidName, transferRejected, badHeader, integrity, fileTooLarge, insufficientStorage
+    case timeout, invalidName, transferRejected, badHeader, integrity, fileTooLarge, insufficientStorage, cancelled
     var errorDescription: String? {
         switch self {
         case .timeout: return "The network transfer timed out."
@@ -352,6 +372,7 @@ private enum LANError: LocalizedError {
         case .integrity: return "The received file failed its SHA-256 integrity check."
         case .fileTooLarge: return "Files larger than 20 GiB are not supported."
         case .insufficientStorage: return "There is not enough free storage to receive this file."
+        case .cancelled: return "The transfer was cancelled."
         }
     }
 }

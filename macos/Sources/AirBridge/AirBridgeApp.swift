@@ -48,6 +48,8 @@ struct AirBridgePopover: View {
                     if lan.isTransferring {
                         ProgressView(value: lan.progress)
                         Text("\(Int(lan.progress * 100))% sent").font(.system(size: 9)).foregroundStyle(.tertiary)
+                        Button("Cancel") { lan.cancelTransfer() }
+                            .font(.system(size: 9)).disabled(!lan.canCancelTransfer)
                     }
                 }
                 if lan.peers.isEmpty {
