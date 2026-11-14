@@ -154,7 +154,10 @@ final class LANTransferController: ObservableObject {
     }
 
     nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue, connectionBox: LockedBox<NWConnection?>, isCancelled: @escaping @Sendable () -> Bool, onProgress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
-        let connection = NWConnection(to: endpoint, using: .tcp)
+        let tcpOptions = NWProtocolTCP.Options()
+        tcpOptions.noDelay = true
+        let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        let connection = NWConnection(to: endpoint, using: parameters)
         connectionBox.set(connection)
         defer { connectionBox.set(nil); connection.cancel() }
         let ready = DispatchSemaphore(value: 0)
@@ -185,7 +188,7 @@ final class LANTransferController: ObservableObject {
         let input = try FileHandle(forReadingFrom: url)
         defer { try? input.close() }
         while true {
-            let chunk = try input.read(upToCount: 1024 * 1024) ?? Data()
+            let chunk = try input.read(upToCount: 4 * 1024 * 1024) ?? Data()
             if chunk.isEmpty { break }
             hasher.update(data: chunk)
         }
@@ -203,7 +206,7 @@ final class LANTransferController: ObservableObject {
         onProgress(0, size)
         while true {
             if isCancelled() { throw LANError.cancelled }
-            let chunk = try input.read(upToCount: 256 * 1024) ?? Data()
+            let chunk = try input.read(upToCount: 4 * 1024 * 1024) ?? Data()
             if chunk.isEmpty { break }
             try sendData(chunk, through: connection)
             sent += UInt64(chunk.count)
@@ -241,7 +244,7 @@ final class LANTransferController: ObservableObject {
     }
 
     private func receive(on connection: NWConnection, parser: IncomingParser) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, complete, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1024 * 1024) { [weak self] data, _, complete, error in
             if let data, !data.isEmpty {
                 do {
                     if try parser.consume(data) {
