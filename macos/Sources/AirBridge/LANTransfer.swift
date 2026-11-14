@@ -8,6 +8,16 @@ struct LANPeer: Identifiable {
     let endpoint: NWEndpoint
 }
 
+struct TransferHistoryEntry: Identifiable, Codable {
+    let id: UUID
+    let filename: String
+    let direction: String
+    let peer: String
+    let bytes: UInt64
+    let date: Date
+    let succeeded: Bool
+}
+
 @MainActor
 final class LANTransferController: ObservableObject {
     @Published private(set) var peers: [LANPeer] = []
@@ -15,10 +25,32 @@ final class LANTransferController: ObservableObject {
     @Published var error: String?
     @Published private(set) var progress: Double = 0
     @Published private(set) var isTransferring = false
+    @Published private(set) var history: [TransferHistoryEntry] = []
 
+    private let historyKey = "airbridge.lan.transfer-history.v1"
     private let queue = DispatchQueue(label: "com.airbridge.lan", qos: .userInitiated)
     private var browser: NWBrowser?
     private var listener: NWListener?
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: historyKey),
+           let saved = try? JSONDecoder().decode([TransferHistoryEntry].self, from: data) {
+            history = saved
+        }
+    }
+
+    private func record(_ entry: TransferHistoryEntry) {
+        history.insert(entry, at: 0)
+        history = Array(history.prefix(100))
+        if let data = try? JSONEncoder().encode(history) {
+            UserDefaults.standard.set(data, forKey: historyKey)
+        }
+    }
+
+    func clearHistory() {
+        history = []
+        UserDefaults.standard.removeObject(forKey: historyKey)
+    }
 
     func start() {
         startListener()
@@ -86,7 +118,13 @@ final class LANTransferController: ObservableObject {
                 try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global()) { sent, total in
                     Task { @MainActor in self?.progress = total == 0 ? 1 : Double(sent) / Double(total) }
                 }
-                Task { @MainActor in self?.progress = 1; self?.isTransferring = false; self?.status = "Sent \(file.lastPathComponent) to \(peer.id)" }
+                Task { @MainActor in
+                    self?.progress = 1
+                    self?.isTransferring = false
+                    self?.status = "Sent \(file.lastPathComponent) to \(peer.id)"
+                    let size = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber)?.uint64Value ?? 0
+                    self?.record(TransferHistoryEntry(id: UUID(), filename: file.lastPathComponent, direction: "Sent", peer: peer.id, bytes: size, date: Date(), succeeded: true))
+                }
             } catch {
                 Task { @MainActor in self?.isTransferring = false; self?.error = error.localizedDescription }
             }
@@ -184,7 +222,10 @@ final class LANTransferController: ObservableObject {
                 do {
                     if try parser.consume(data) {
                         connection.send(content: Data([0x06]), completion: .contentProcessed { _ in connection.cancel() })
-                        Task { @MainActor in self?.status = "Received \(parser.filename) in Downloads/AirBridge" }
+                        Task { @MainActor in
+                            self?.status = "Received \(parser.filename) in Downloads/AirBridge"
+                            self?.record(TransferHistoryEntry(id: UUID(), filename: parser.filename, direction: "Received", peer: "Android device", bytes: parser.transferSize, date: Date(), succeeded: true))
+                        }
                         return
                     }
                 } catch {
@@ -219,6 +260,7 @@ private final class IncomingParser: @unchecked Sendable {
     private var output: FileHandle?
     private var temporaryURL: URL?
     private(set) var filename = "file"
+    var transferSize: UInt64 { expectedSize }
 
     func consume(_ data: Data) throws -> Bool {
         buffer.append(data)
