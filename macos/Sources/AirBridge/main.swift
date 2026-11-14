@@ -20,8 +20,11 @@ struct AirBridgeApp: App {
 
 struct AirBridgePopover: View {
     @StateObject private var mtp = MTPController()
+    @StateObject private var lan = LANTransferController()
     @State private var showingImporter = false
-    @State private var clipboardEnabled = true
+    @State private var showingLANImporter = false
+    @State private var lanTarget: LANPeer?
+    @State private var clipboardEnabled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -35,6 +38,37 @@ struct AirBridgePopover: View {
                 Image(systemName: "iphone.and.arrow.right.inward")
                     .font(.system(size: 24, weight: .regular))
             }
+
+            VStack(alignment: .leading, spacing: 9) {
+                HStack {
+                    Text("WI-FI DEVICES")
+                        .font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    Spacer()
+                    Text(lan.status).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if lan.peers.isEmpty {
+                    Text("Waiting for your Android device on the same local network.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                } else {
+                    ForEach(lan.peers) { peer in
+                        HStack {
+                            Image(systemName: "iphone").foregroundStyle(.secondary)
+                            Text(peer.id).font(.system(size: 12, weight: .medium))
+                            Spacer()
+                            Button("Send file…") {
+                                lanTarget = peer
+                                showingLANImporter = true
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+                if let error = lan.error {
+                    Text(error).font(.system(size: 10)).foregroundStyle(.red).textSelection(.enabled)
+                }
+            }
+            .padding(12)
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
 
             HStack(spacing: 10) {
                 Image(systemName: mtp.isConnected ? "cable.connector" : "cable.connector.slash")
@@ -178,7 +212,17 @@ struct AirBridgePopover: View {
             case .failure(let failure): mtp.error = failure.localizedDescription
             }
         }
-        .onAppear { mtp.refresh() }
+        .fileImporter(isPresented: $showingLANImporter, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first, let peer = lanTarget { lan.send(url, to: peer) }
+            case .failure(let failure): lan.error = failure.localizedDescription
+            }
+        }
+        .onAppear {
+            mtp.refresh()
+            lan.start()
+        }
     }
 }
 
