@@ -10,11 +10,6 @@ struct AirBridgeApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("AirBridge", id: "main") {
-            AirBridgePopover()
-                .frame(width: 520, height: 620)
-        }
-        .defaultSize(width: 520, height: 620)
     }
 }
 
@@ -24,6 +19,7 @@ struct AirBridgePopover: View {
     @State private var showingImporter = false
     @State private var showingMTPImporter = false
     @State private var selectedMode = "Wireless"
+    @State private var selectedCategory = "Files"
     @State private var selectedURLs: [URL] = []
     @State private var showHistory = false
     @State private var dropError: String?
@@ -97,10 +93,20 @@ struct AirBridgePopover: View {
                             Button("Cancel") { lan.cancelTransfer() }.disabled(!lan.canCancelTransfer)
                         }.font(.system(size: 9)).foregroundStyle(.secondary)
                     } else {
+                        HStack(spacing: 3) {
+                            ForEach(["Files", "Photos", "Audio", "Apps", "Text"], id: \.self) { category in
+                                Button(category) { selectedCategory = category }
+                                    .font(.system(size: 9, weight: selectedCategory == category ? .semibold : .regular))
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(selectedCategory == category ? .primary : .secondary)
+                                    .padding(.horizontal, 6).padding(.vertical, 4)
+                                    .background(selectedCategory == category ? Color.primary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
+                            }
+                        }
                         VStack(spacing: 6) {
-                            Image(systemName: "tray.and.arrow.down").font(.system(size: 24)).foregroundStyle(.secondary)
-                            Text("Drop files here or choose files").font(.system(size: 11, weight: .medium))
-                            Text("Files · Photos · Audio · Apps").font(.system(size: 9)).foregroundStyle(.tertiary)
+                            Image(systemName: selectedCategory == "Text" ? "text.alignleft" : "tray.and.arrow.down").font(.system(size: 24)).foregroundStyle(.secondary)
+                            Text(selectedCategory == "Text" ? "Paste copied text with ⌘V" : "Drop items here or choose files").font(.system(size: 11, weight: .medium))
+                            Text("Manual transfer · nothing is synced automatically").font(.system(size: 9)).foregroundStyle(.tertiary)
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 13)
                         .contentShape(RoundedRectangle(cornerRadius: 11))
@@ -211,7 +217,7 @@ struct AirBridgePopover: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .preferredColorScheme(.dark)
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: selectedTypes, allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): selectedURLs.append(contentsOf: urls)
             case .failure(let failure): dropError = failure.localizedDescription
@@ -229,6 +235,16 @@ struct AirBridgePopover: View {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
                 if !Task.isCancelled && selectedMode == "Wired" && !mtp.isTransferring && !mtp.isLoading { mtp.refresh() }
             }
+        }
+    }
+
+    private var selectedTypes: [UTType] {
+        switch selectedCategory {
+        case "Photos": return [.image]
+        case "Audio": return [.audio]
+        case "Apps": return [UTType(filenameExtension: "app") ?? .applicationBundle, .applicationBundle]
+        case "Text": return [.plainText]
+        default: return [.item]
         }
     }
 
