@@ -72,6 +72,8 @@ class NetworkTransferService : Service() {
                         client.use { socket ->
                             try {
                                 val name = AirBridgeProtocol.receive(this, socket)
+                                socket.getOutputStream().write(0x06)
+                                socket.getOutputStream().flush()
                                 AirBridgeState.update {
                                     AirBridgeState.lastReceived = "Received $name in Downloads/AirBridge"
                                     AirBridgeState.status = AirBridgeState.lastReceived
