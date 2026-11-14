@@ -45,6 +45,10 @@ struct AirBridgePopover: View {
                         .font(.system(size: 10, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
                     Spacer()
                     Text(lan.status).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    if lan.isTransferring {
+                        ProgressView(value: lan.progress)
+                        Text("\(Int(lan.progress * 100))% sent").font(.system(size: 9)).foregroundStyle(.tertiary)
+                    }
                 }
                 if lan.peers.isEmpty {
                     Text("Waiting for your Android device on the same local network.")

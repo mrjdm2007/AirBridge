@@ -13,6 +13,8 @@ final class LANTransferController: ObservableObject {
     @Published private(set) var peers: [LANPeer] = []
     @Published var status = "Starting local network discovery…"
     @Published var error: String?
+    @Published private(set) var progress: Double = 0
+    @Published private(set) var isTransferring = false
 
     private let queue = DispatchQueue(label: "com.airbridge.lan", qos: .userInitiated)
     private var browser: NWBrowser?
@@ -75,19 +77,23 @@ final class LANTransferController: ObservableObject {
     func send(_ file: URL, to peer: LANPeer) {
         status = "Sending \(file.lastPathComponent)…"
         error = nil
+        progress = 0
+        isTransferring = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let accessed = file.startAccessingSecurityScopedResource()
             defer { if accessed { file.stopAccessingSecurityScopedResource() } }
             do {
-                try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global())
-                Task { @MainActor in self?.status = "Sent \(file.lastPathComponent) to \(peer.id)" }
+                try Self.sendFile(file, endpoint: peer.endpoint, queue: self?.queue ?? .global()) { sent, total in
+                    Task { @MainActor in self?.progress = total == 0 ? 1 : Double(sent) / Double(total) }
+                }
+                Task { @MainActor in self?.progress = 1; self?.isTransferring = false; self?.status = "Sent \(file.lastPathComponent) to \(peer.id)" }
             } catch {
-                Task { @MainActor in self?.error = error.localizedDescription }
+                Task { @MainActor in self?.isTransferring = false; self?.error = error.localizedDescription }
             }
         }
     }
 
-    nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue) throws {
+    nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue, onProgress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
         let connection = NWConnection(to: endpoint, using: .tcp)
         defer { connection.cancel() }
         let ready = DispatchSemaphore(value: 0)
@@ -132,10 +138,14 @@ final class LANTransferController: ObservableObject {
         try sendData(header, through: connection)
 
         try input.seek(toOffset: 0)
+        var sent: UInt64 = 0
+        onProgress(0, size)
         while true {
             let chunk = try input.read(upToCount: 256 * 1024) ?? Data()
             if chunk.isEmpty { break }
             try sendData(chunk, through: connection)
+            sent += UInt64(chunk.count)
+            onProgress(sent, size)
         }
         let sendDone = DispatchSemaphore(value: 0)
         connection.send(content: nil, contentContext: .defaultMessage, isComplete: true, completion: .contentProcessed { _ in sendDone.signal() })
