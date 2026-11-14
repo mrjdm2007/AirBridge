@@ -255,6 +255,16 @@ struct AirBridgePopover: View {
             mtp.refresh()
             lan.start()
         }
+        .task {
+            // MTP has no portable hot-plug notification API through libmtp's CLI.
+            // Poll gently so connecting/unlocking the phone is detected without a manual refresh.
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                if !Task.isCancelled && !mtp.isTransferring && !mtp.isLoading {
+                    mtp.refresh()
+                }
+            }
+        }
     }
 }
 
