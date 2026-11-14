@@ -28,7 +28,8 @@ object AirBridgeState {
     var transferProgress by androidx.compose.runtime.mutableFloatStateOf(0f)
     var transferActive by androidx.compose.runtime.mutableStateOf(false)
     var transferLabel by androidx.compose.runtime.mutableStateOf("")
-    var pendingUris by androidx.compose.runtime.mutableStateOf<List<android.net.Uri>>(emptyList())\n    var directShareRequested by androidx.compose.runtime.mutableStateOf(false)
+    var pendingUris by androidx.compose.runtime.mutableStateOf<List<android.net.Uri>>(emptyList())
+    var directShareRequested by androidx.compose.runtime.mutableStateOf(false)
     private val main = Handler(Looper.getMainLooper())
     fun update(block: () -> Unit) { main.post { block() } }
 }
