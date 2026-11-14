@@ -53,11 +53,10 @@ enum MTPService {
         let executable = try tool(name)
         let process = Process()
         let output = Pipe()
-        let errors = Pipe()
         process.executableURL = executable
         process.arguments = arguments
         process.standardOutput = output
-        process.standardError = errors
+        process.standardError = output
         process.environment = [
             "PATH": searchPaths.joined(separator: ":"),
             "HOME": FileManager.default.homeDirectoryForCurrentUser.path
@@ -67,20 +66,18 @@ enum MTPService {
         } catch {
             throw MTPError.commandFailed("Could not start \(name): \(error.localizedDescription)")
         }
-        let stdout = output.fileHandleForReading.readDataToEndOfFile()
-        let stderr = errors.fileHandleForReading.readDataToEndOfFile()
+        let data = output.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        let text = String(data: stdout, encoding: .utf8) ?? ""
-        let errorText = String(data: stderr, encoding: .utf8) ?? ""
+        let text = String(data: data, encoding: .utf8) ?? ""
         guard process.terminationStatus == 0 else {
-            throw MTPError.commandFailed((errorText + "\n" + text).trimmingCharacters(in: .whitespacesAndNewlines))
+            throw MTPError.commandFailed(text.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-        return text + "\n" + errorText
+        return text
     }
 
     static func listFiles() throws -> MTPListing {
         let output = try run("mtp-files", [])
-        guard output.contains("Successfully connected") else {
+        guard output.contains("Listing File Information on Device with name:") else {
             throw MTPError.noDevice(output.contains("No Devices have been found") ? "" : output.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
@@ -119,7 +116,7 @@ enum MTPService {
             } else if trimmed.hasPrefix("Filename:") {
                 currentName = String(trimmed.dropFirst("Filename:".count)).trimmingCharacters(in: .whitespaces)
             } else if trimmed.hasPrefix("File size") {
-                let pattern = #"File size\s+([0-9]+)"#
+                let pattern = #"File size:?\s*([0-9]+)"#
                 if let range = trimmed.range(of: pattern, options: .regularExpression) {
                     let number = trimmed[range].split(whereSeparator: { !$0.isNumber }).last
                     currentSize = Int64(number ?? "0") ?? 0
