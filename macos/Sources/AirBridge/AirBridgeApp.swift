@@ -47,7 +47,7 @@ final class AirBridgeAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func openDropTray(_ sender: Any?) {
-        AirBridgeTrayWindow.shared.show()
+        AirBridgeTrayWindow.shared.show(statusItem: statusItem)
     }
 }
 
@@ -56,7 +56,7 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
     static let shared = AirBridgeTrayWindow()
     private var window: NSWindow?
 
-    func show() {
+    func show(statusItem: NSStatusItem?) {
         if let window, window.isVisible || window.isMiniaturized {
             if window.isMiniaturized { window.deminiaturize(nil) }
             NSApp.activate(ignoringOtherApps: true)
@@ -67,11 +67,15 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
         // can leave the menu-bar command pointing at an invisible window.
         window = nil
 
+        let screen = statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
+        let trayHeight = min(560, max(360, visibleFrame.height - 80))
+        let trayWidth: CGFloat = min(374, max(320, visibleFrame.width - 32))
         let tray = AirBridgePopover()
         let hosting = NSHostingController(rootView: tray)
         let panel = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 374, height: 560),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: trayWidth, height: trayHeight),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -89,8 +93,17 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentViewController = hosting
-        panel.center()
+        panel.minSize = NSSize(width: 320, height: 300)
+        panel.maxSize = NSSize(width: max(320, visibleFrame.width - 16), height: max(300, visibleFrame.height - 32))
         panel.setFrameAutosaveName("AirBridgeDropTray")
+        if let button = statusItem?.button, let buttonWindow = button.window {
+            let buttonRect = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
+            let x = min(max(buttonRect.midX - trayWidth / 2, visibleFrame.minX + 8), visibleFrame.maxX - trayWidth - 8)
+            let y = min(max(buttonRect.minY - trayHeight - 8, visibleFrame.minY + 8), visibleFrame.maxY - trayHeight - 8)
+            panel.setFrameOrigin(NSPoint(x: x, y: y))
+        } else {
+            panel.center()
+        }
         window = panel
 
         NSApp.activate(ignoringOtherApps: true)
@@ -124,6 +137,7 @@ struct AirBridgePopover: View {
     }
 
     var body: some View {
+        ScrollView(.vertical) {
         VStack(spacing: 12) {
             HStack(spacing: 10) {
                 Image(systemName: "arrow.up.arrow.down.square.fill").font(.system(size: 20))
@@ -356,6 +370,8 @@ struct AirBridgePopover: View {
         }
         .padding(12)
         .frame(width: 350)
+        }
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .preferredColorScheme(.dark)
@@ -417,8 +433,7 @@ struct AirBridgePopover: View {
         Button { selectedMode = title; if title == "Wired" { mtp.refresh() } } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                Text(title)
-            }
+                Text(title)            }
             .font(.system(size: 10, weight: .medium))
             .frame(maxWidth: .infinity).padding(.vertical, 7)
             .background(selectedMode == title ? Color.primary.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 9))
