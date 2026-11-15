@@ -132,7 +132,7 @@ final class LANTransferController: ObservableObject {
                 let sizes = files.map { UInt64(max(0, airBridgeItemSize($0))) }
                 let totalBytes = max(1, sizes.reduce(UInt64(0), +))
                 let completedBytes = LockedBox<UInt64>(0)
-                let transferStarted = Date().timeIntervalSinceReferenceDate
+                let transferStarted = LockedBox<Double?>(nil)
                 for (index, file) in files.enumerated() {
                     if cancellationFlag.get() { throw LANError.cancelled }
                     let accessed = file.startAccessingSecurityScopedResource()
@@ -154,7 +154,10 @@ final class LANTransferController: ObservableObject {
                     try Self.sendFile(transferURL, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
                         let absoluteBytes = completedBytes.get() + sent
                         let overall = Double(absoluteBytes) / Double(totalBytes)
-                        let elapsed = max(0.001, Date().timeIntervalSinceReferenceDate - transferStarted)
+                        let now = Date().timeIntervalSinceReferenceDate
+                        let startTime = transferStarted.get() ?? now
+                        if transferStarted.get() == nil { transferStarted.set(now) }
+                        let elapsed = max(0.001, now - startTime)
                         let speed = Double(absoluteBytes) / elapsed
                         Task { @MainActor [weak self] in
                             self?.progress = min(1, overall)
@@ -170,7 +173,7 @@ final class LANTransferController: ObservableObject {
                     self?.progress = 1
                     self?.transferredBytes = totalBytes
                     self?.totalTransferBytes = totalBytes
-                    self?.transferSpeedBytesPerSecond = Double(totalBytes) / max(0.001, Date().timeIntervalSinceReferenceDate - transferStarted)
+                    self?.transferSpeedBytesPerSecond = Double(totalBytes) / max(0.001, Date().timeIntervalSinceReferenceDate - (transferStarted.get() ?? Date().timeIntervalSinceReferenceDate))
                     self?.isTransferring = false
                     self?.canCancelTransfer = false
                     self?.status = "Sent \(files.count) item(s) to \(peer.id)"
