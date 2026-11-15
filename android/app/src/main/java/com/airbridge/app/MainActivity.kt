@@ -127,8 +127,26 @@ class MainActivity : ComponentActivity() {
         Thread(Runnable {
             try {
                 uris.forEach { uri ->
+                    var previousBytes = 0L
+                    var previousTime = System.nanoTime()
+                    var smoothedSpeed = 0.0
                     AirBridgeProtocol.send(this, uri, InetAddress.getByName(peer.host), peer.port) { done, total ->
-                        AirBridgeState.update { AirBridgeState.transferActive = true; AirBridgeState.transferLabel = "Sending file"; AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat() }
+                        val now = System.nanoTime()
+                        val elapsed = (now - previousTime) / 1_000_000_000.0
+                        if (elapsed >= 0.15) {
+                            val instant = (done - previousBytes).toDouble() / elapsed
+                            smoothedSpeed = if (smoothedSpeed == 0.0) instant else smoothedSpeed * 0.7 + instant * 0.3
+                            previousBytes = done
+                            previousTime = now
+                        }
+                        AirBridgeState.update {
+                            AirBridgeState.transferActive = true
+                            AirBridgeState.transferLabel = "Sending file"
+                            AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat()
+                            AirBridgeState.transferredBytes = done
+                            AirBridgeState.totalTransferBytes = total
+                            AirBridgeState.transferSpeedBytesPerSecond = smoothedSpeed.toLong()
+                        }
                     }
                 }
                 AirBridgeState.update {
