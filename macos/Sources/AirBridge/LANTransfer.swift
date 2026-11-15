@@ -24,6 +24,9 @@ final class LANTransferController: ObservableObject {
     @Published var status = "Starting local network discovery…"
     @Published var error: String?
     @Published private(set) var progress: Double = 0
+    @Published private(set) var transferredBytes: UInt64 = 0
+    @Published private(set) var totalTransferBytes: UInt64 = 0
+    @Published private(set) var transferSpeedBytesPerSecond: Double = 0
     @Published private(set) var isTransferring = false
     @Published private(set) var history: [TransferHistoryEntry] = []
     @Published private(set) var canCancelTransfer = false
@@ -115,6 +118,9 @@ final class LANTransferController: ObservableObject {
         status = "Preparing \(files.count) item(s)…"
         error = nil
         progress = 0
+        transferredBytes = 0
+        totalTransferBytes = 0
+        transferSpeedBytesPerSecond = 0
         isTransferring = true
         canCancelTransfer = true
         cancellation.set(false)
@@ -126,6 +132,7 @@ final class LANTransferController: ObservableObject {
                 let sizes = files.map { UInt64(max(0, airBridgeItemSize($0))) }
                 let totalBytes = max(1, sizes.reduce(UInt64(0), +))
                 let completedBytes = LockedBox<UInt64>(0)
+                let transferStarted = Date().timeIntervalSinceReferenceDate
                 for (index, file) in files.enumerated() {
                     if cancellationFlag.get() { throw LANError.cancelled }
                     let accessed = file.startAccessingSecurityScopedResource()
@@ -145,14 +152,25 @@ final class LANTransferController: ObservableObject {
                     }
                     defer { if let temporaryArchive { try? FileManager.default.removeItem(at: temporaryArchive) } }
                     try Self.sendFile(transferURL, endpoint: peer.endpoint, queue: transferQueue, connectionBox: connectionBox, isCancelled: { cancellationFlag.get() }) { [weak self] sent, total in
-                        let overall = Double(completedBytes.get() + sent) / Double(totalBytes)
-                        Task { @MainActor [weak self] in self?.progress = min(1, overall) }
+                        let absoluteBytes = completedBytes.get() + sent
+                        let overall = Double(absoluteBytes) / Double(totalBytes)
+                        let elapsed = max(0.001, Date().timeIntervalSinceReferenceDate - transferStarted)
+                        let speed = Double(absoluteBytes) / elapsed
+                        Task { @MainActor [weak self] in
+                            self?.progress = min(1, overall)
+                            self?.transferredBytes = absoluteBytes
+                            self?.totalTransferBytes = totalBytes
+                            self?.transferSpeedBytesPerSecond = speed
+                        }
                     }
                     completedBytes.set(completedBytes.get() + sizes[index])
                     Task { @MainActor [weak self] in self?.status = "Sent \(index + 1) of \(files.count)" }
                 }
                 Task { @MainActor in
                     self?.progress = 1
+                    self?.transferredBytes = totalBytes
+                    self?.totalTransferBytes = totalBytes
+                    self?.transferSpeedBytesPerSecond = Double(totalBytes) / max(0.001, Date().timeIntervalSinceReferenceDate - transferStarted)
                     self?.isTransferring = false
                     self?.canCancelTransfer = false
                     self?.status = "Sent \(files.count) item(s) to \(peer.id)"
