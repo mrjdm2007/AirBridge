@@ -90,15 +90,28 @@ class NetworkTransferService : Service() {
                         client.use { socket ->
                             try {
                                 socket.soTimeout = 120_000
-                                AirBridgeState.update { AirBridgeState.transferActive = true; AirBridgeState.transferProgress = 0f; AirBridgeState.transferLabel = "Receiving file" }
+                                AirBridgeState.update { AirBridgeState.transferActive = true; AirBridgeState.transferProgress = 0f; AirBridgeState.transferLabel = "Receiving file"; AirBridgeState.transferredBytes = 0L; AirBridgeState.totalTransferBytes = 0L; AirBridgeState.transferSpeedBytesPerSecond = 0L }
+                                var previousBytes = 0L
+                                var previousTime = System.nanoTime()
+                                var smoothedSpeed = 0.0
                                 val received = AirBridgeProtocol.receive(this, socket) { done, total ->
-                                    AirBridgeState.update { AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat() }
+                                    val now = System.nanoTime()
+                                    val elapsed = (now - previousTime) / 1_000_000_000.0
+                                    if (elapsed >= 0.15) {
+                                        val instant = (done - previousBytes).toDouble() / elapsed
+                                        smoothedSpeed = if (smoothedSpeed == 0.0) instant else smoothedSpeed * 0.7 + instant * 0.3
+                                        previousBytes = done
+                                        previousTime = now
+                                    }
+                                    AirBridgeState.update { AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat(); AirBridgeState.transferredBytes = done; AirBridgeState.totalTransferBytes = total; AirBridgeState.transferSpeedBytesPerSecond = smoothedSpeed.toLong() }
                                 }
                                 socket.getOutputStream().write(0x06)
                                 socket.getOutputStream().flush()
                                 AirBridgeState.update {
                                     AirBridgeState.transferActive = false
                                     AirBridgeState.transferProgress = 1f
+                                    AirBridgeState.transferredBytes = AirBridgeState.totalTransferBytes
+                                    AirBridgeState.transferSpeedBytesPerSecond = 0L
                                     AirBridgeState.lastReceived = "Received ${received.name} in Downloads/AirBridge"
                                     AirBridgeState.receivedTextName = if (received.textContent != null) received.name else ""
                                     AirBridgeState.receivedTextContent = received.textContent
