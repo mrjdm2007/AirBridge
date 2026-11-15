@@ -143,6 +143,13 @@ struct AirBridgePopover: View {
                     }
                     if lan.isTransferring {
                         ProgressView(value: lan.progress)
+                        HStack(spacing: 6) {
+                            Text("\\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.transferredBytes), countStyle: .file)) / \\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.totalTransferBytes), countStyle: .file))")
+                                .font(.system(size: 9, design: .monospaced))
+                            Spacer()
+                            Text("\\(ByteCountFormatter.string(fromByteCount: Int64(max(0, lan.transferSpeedBytesPerSecond)), countStyle: .file))/s")
+                                .font(.system(size: 9, design: .monospaced))
+                        }
                         HStack {
                             Text(lan.status).lineLimit(1)
                             Spacer()
