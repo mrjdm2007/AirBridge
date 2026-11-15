@@ -66,7 +66,7 @@ object AirBridgeProtocol {
         }
     }
 
-    fun send(context: Context, uri: Uri, address: InetAddress, port: Int, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
+    fun send(context: Context, uri: Uri, address: InetAddress, port: Int, isCancelled: () -> Boolean = { false }, onSocket: (Socket?) -> Unit = {}, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
         val resolver = context.contentResolver
         val name = safeName(queryName(context, uri) ?: "AirBridge-file")
         val digest = MessageDigest.getInstance("SHA-256")
@@ -77,6 +77,7 @@ object AirBridgeProtocol {
         resolver.openInputStream(uri).use { source ->
             requireNotNull(source) { "Cannot open the selected file." }
             while (true) {
+                if (isCancelled()) throw java.io.InterruptedIOException("Transfer cancelled.")
                 val count = source.read(buffer)
                 if (count < 0) break
                 totalBytes += count
@@ -88,6 +89,8 @@ object AirBridgeProtocol {
         val nameBytes = name.toByteArray(Charsets.UTF_8)
 
         Socket().use { socket ->
+            onSocket(socket)
+            try {
             socket.tcpNoDelay = true
             socket.sendBufferSize = IO_BUFFER_BYTES
             socket.receiveBufferSize = IO_BUFFER_BYTES
@@ -105,6 +108,7 @@ object AirBridgeProtocol {
                 requireNotNull(source) { "The selected file could not be reopened for transfer." }
                 var sent = 0L
                 while (true) {
+                    if (isCancelled()) throw java.io.InterruptedIOException("Transfer cancelled.")
                     val count = source.read(buffer)
                     if (count < 0) break
                     sent += count
@@ -116,6 +120,7 @@ object AirBridgeProtocol {
             }
             output.flush()
             require(socket.getInputStream().read() == 0x06) { "The receiving device did not confirm the file." }
+            } finally { onSocket(null) }
         }
         return name
     }
