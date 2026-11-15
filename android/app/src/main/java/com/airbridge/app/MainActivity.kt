@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.net.InetAddress
+import java.net.Socket
 
 private val Ink = Color(0xFFF4F4F2)
 private val Paper = Color(0xFF101010)
@@ -50,6 +51,8 @@ private fun formatTransferBytes(bytes: Long): String {
 }
 
 class MainActivity : ComponentActivity() {
+    @Volatile private var activeSendSocket: Socket? = null
+    @Volatile private var cancelSendRequested = false
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleShare(intent)
@@ -119,18 +122,24 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun sendPending(peer: AirBridgePeer) {
+        if (AirBridgeState.transferActive) return
         val uris = AirBridgeState.pendingUris
         if (uris.isEmpty()) {
             AirBridgeState.status = "Share a file to AirBridge first."
             return
         }
+        cancelSendRequested = false
+        AirBridgeState.transferActive = true
+        AirBridgeState.transferLabel = "Preparing transfer"
         Thread(Runnable {
             try {
-                uris.forEach { uri ->
+                uris.forEachIndexed { index, uri ->
+                    if (cancelSendRequested) throw java.io.InterruptedIOException("Transfer cancelled.")
                     var previousBytes = 0L
                     var previousTime = System.nanoTime()
                     var smoothedSpeed = 0.0
-                    AirBridgeProtocol.send(this, uri, InetAddress.getByName(peer.host), peer.port) { done, total ->
+                    AirBridgeProtocol.send(this, uri, InetAddress.getByName(peer.host), peer.port,
+                        isCancelled = { cancelSendRequested }, onSocket = { activeSendSocket = it }) { done, total ->
                         val now = System.nanoTime()
                         val elapsed = (now - previousTime) / 1_000_000_000.0
                         if (elapsed >= 0.15) {
@@ -141,7 +150,7 @@ class MainActivity : ComponentActivity() {
                         }
                         AirBridgeState.update {
                             AirBridgeState.transferActive = true
-                            AirBridgeState.transferLabel = "Sending file"
+                            AirBridgeState.transferLabel = "Sending ${index + 1}/${uris.size}"
                             AirBridgeState.transferProgress = if (total == 0L) 1f else done.toFloat() / total.toFloat()
                             AirBridgeState.transferredBytes = done
                             AirBridgeState.totalTransferBytes = total
@@ -156,9 +165,15 @@ class MainActivity : ComponentActivity() {
                     AirBridgeState.pendingUris = emptyList()
                 }
             } catch (failure: Throwable) {
-                AirBridgeState.update { AirBridgeState.transferActive = false; AirBridgeState.status = failure.localizedMessage ?: "Send failed" }
+                AirBridgeState.update { AirBridgeState.transferActive = false; AirBridgeState.transferSpeedBytesPerSecond = 0L; AirBridgeState.status = if (cancelSendRequested) "Transfer cancelled" else (failure.localizedMessage ?: "Send failed") }
             }
-        }).start()
+        }).apply { isDaemon = true }.start()
+    }
+
+    private fun cancelPendingSend() {
+        cancelSendRequested = true
+        activeSendSocket?.close()
+        AirBridgeState.status = "Cancelling transfer…"
     }
 }
 
@@ -206,6 +221,10 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                                 Text("${formatTransferBytes(AirBridgeState.transferredBytes)} / ${formatTransferBytes(AirBridgeState.totalTransferBytes)}", fontSize = 10.sp, color = Muted)
                                 Text("${formatTransferBytes(AirBridgeState.transferSpeedBytesPerSecond)}/s", fontSize = 10.sp, color = Muted)
                             }
+                            val remaining = (AirBridgeState.totalTransferBytes - AirBridgeState.transferredBytes).coerceAtLeast(0L)
+                            val speed = AirBridgeState.transferSpeedBytesPerSecond
+                            Text(if (speed > 0L) "${formatTransferBytes(remaining)} remaining · about ${((remaining + speed - 1) / speed)} sec" else "Calculating remaining time…", fontSize = 9.sp, color = Muted)
+                            OutlinedButton(onClick = { cancelPendingSend() }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) { Text("Cancel transfer", fontSize = 11.sp) }
                         }
                         Text("SEND SOMETHING", fontSize = 9.sp, color = Muted, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
@@ -236,7 +255,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                         if (AirBridgeState.pendingUris.isNotEmpty()) {
                             Text("${AirBridgeState.pendingUris.size} item(s) selected", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = { AirBridgeState.pendingUris = emptyList() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Cancel", fontSize = 11.sp) }
+                                OutlinedButton(onClick = { AirBridgeState.pendingUris = emptyList() }, enabled = !AirBridgeState.transferActive, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Clear", fontSize = 11.sp) }
                                 Button(onClick = { AirBridgeState.peers.firstOrNull()?.let(onSend) }, enabled = AirBridgeState.peers.isNotEmpty() && !AirBridgeState.transferActive, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(10.dp)) {
                                     Icon(Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Send", fontSize = 11.sp)
                                 }
