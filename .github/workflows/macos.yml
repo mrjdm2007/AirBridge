@@ -2,9 +2,9 @@ name: macOS build
 
 on:
   push:
-    paths: ["macos/**", ".github/workflows/macos.yml"]
+    paths: ["macos/**", "assets/**", ".github/workflows/macos.yml"]
   pull_request:
-    paths: ["macos/**", ".github/workflows/macos.yml"]
+    paths: ["macos/**", "assets/**", ".github/workflows/macos.yml"]
   workflow_dispatch:
 
 jobs:
@@ -13,16 +13,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install MTP host tools
-        run: brew install libmtp
+        run: brew install libmtp librsvg
       - name: Build Swift package
         working-directory: macos
         run: swift build -c release
-      - name: Package app executable
+      - name: Package AirBridge app with icon and signature
         working-directory: macos
         run: |
           APP="AirBridge.app"
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" AirBridge.iconset
           cp .build/release/AirBridge "$APP/Contents/MacOS/AirBridge"
+          rsvg-convert -w 1024 -h 1024 ../assets/airbridge-mark.svg -o AirBridge-1024.png
+          for size in 16 32 128 256 512; do
+            sips -z "$size" "$size" AirBridge-1024.png --out "AirBridge.iconset/icon_${size}x${size}.png" >/dev/null
+          done
+          sips -z 32 32 AirBridge-1024.png --out AirBridge.iconset/icon_16x16@2x.png >/dev/null
+          sips -z 64 64 AirBridge-1024.png --out AirBridge.iconset/icon_32x32@2x.png >/dev/null
+          sips -z 256 256 AirBridge-1024.png --out AirBridge.iconset/icon_128x128@2x.png >/dev/null
+          sips -z 512 512 AirBridge-1024.png --out AirBridge.iconset/icon_256x256@2x.png >/dev/null
+          sips -z 1024 1024 AirBridge-1024.png --out AirBridge.iconset/icon_512x512@2x.png >/dev/null
+          iconutil -c icns AirBridge.iconset -o "$APP/Contents/Resources/AppIcon.icns"
           cat > "$APP/Contents/Info.plist" <<'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -31,16 +41,21 @@ jobs:
           <key>CFBundleIdentifier</key><string>com.airbridge.app</string>
           <key>CFBundleName</key><string>AirBridge</string>
           <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleIconFile</key><string>AppIcon</string>
           <key>LSMinimumSystemVersion</key><string>13.0</string>
           <key>NSLocalNetworkUsageDescription</key><string>AirBridge discovers and transfers files directly with your paired Android device on your local network.</string>
           <key>NSBonjourServices</key><array><string>_airbridge._tcp</string></array>
           <key>NSHighResolutionCapable</key><true/>
           </dict></plist>
           PLIST
+          # Ad-hoc signature validates bundle structure but is not Developer ID
+          # signing or notarization.
+          codesign --force --deep --sign - "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
           ditto -c -k --sequesterRsrc --keepParent "$APP" AirBridge-macOS.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: AirBridge-macOS
+          name: AirBridge-macOS-App
           path: macos/AirBridge-macOS.zip
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
