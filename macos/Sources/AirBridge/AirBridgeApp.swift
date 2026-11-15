@@ -256,7 +256,7 @@ struct AirBridgePopover: View {
             }
         }
         .padding(12)
-        .frame(width: 356, height: 336)
+        .frame(width: 356, height: 356)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .preferredColorScheme(.dark)
