@@ -431,7 +431,7 @@ struct AirBridgePopover: View {
         }
         .task {
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
                 if !Task.isCancelled && selectedMode == "Wired" && !mtp.isTransferring && !mtp.isLoading { mtp.refresh() }
             }
         }

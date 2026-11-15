@@ -7,6 +7,7 @@ import android.content.ContentValues
 import android.provider.MediaStore
 import android.os.Environment
 import android.os.Bundle
+import android.view.HapticFeedbackConstants
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -27,6 +28,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -184,6 +186,8 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
     var textDraft by remember { mutableStateOf(TextFieldValue("")) }
     var category by remember { mutableStateOf("Files") }
     val context = LocalContext.current
+    val hapticView = LocalView.current
+    val buttonHaptic: () -> Unit = { hapticView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) }
     LaunchedEffect(AirBridgeState.directShareRequested, AirBridgeState.peers.size, AirBridgeState.pendingUris) {
         if (AirBridgeState.directShareRequested && AirBridgeState.pendingUris.isNotEmpty()) {
             val target = AirBridgeState.peers.firstOrNull()
@@ -234,7 +238,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                             val remaining = (AirBridgeState.totalTransferBytes - AirBridgeState.transferredBytes).coerceAtLeast(0L)
                             val speed = AirBridgeState.transferSpeedBytesPerSecond
                             Text(if (speed > 0L) "${formatTransferBytes(remaining)} remaining · about ${((remaining + speed - 1) / speed)} sec" else "Calculating remaining time…", fontSize = 9.sp, color = Muted)
-                            OutlinedButton(onClick = onCancelSend, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) { Text("Cancel transfer", fontSize = 11.sp) }
+                            OutlinedButton(onClick = { buttonHaptic(); onCancelSend() }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) { Text("Cancel transfer", fontSize = 11.sp) }
                         }
                         Text("SEND SOMETHING", fontSize = 9.sp, color = Muted, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
@@ -245,6 +249,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                             }
                         }
                         Button(onClick = {
+                            buttonHaptic()
                             val mime = when (category) {
                                 "Photos" -> arrayOf("image/*")
                                 "Audio" -> arrayOf("audio/*")
@@ -266,7 +271,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                             Text("${AirBridgeState.pendingUris.size} item(s) selected", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { AirBridgeState.pendingUris = emptyList() }, enabled = !AirBridgeState.transferActive, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Clear", fontSize = 11.sp) }
-                                Button(onClick = { AirBridgeState.peers.firstOrNull()?.let(onSend) }, enabled = AirBridgeState.peers.isNotEmpty() && !AirBridgeState.transferActive, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(10.dp)) {
+                                Button(onClick = { buttonHaptic(); AirBridgeState.peers.firstOrNull()?.let(onSend) }, enabled = AirBridgeState.peers.isNotEmpty() && !AirBridgeState.transferActive, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(10.dp)) {
                                     Icon(Icons.Rounded.Send, contentDescription = null, modifier = Modifier.size(15.dp)); Spacer(Modifier.width(5.dp)); Text("Send", fontSize = 11.sp)
                                 }
                             }

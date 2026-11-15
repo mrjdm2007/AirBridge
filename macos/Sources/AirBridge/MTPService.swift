@@ -61,10 +61,10 @@ enum MTPService {
         process.arguments = arguments
         process.standardOutput = outputHandle
         process.standardError = outputHandle
-        process.environment = [
-            "PATH": searchPaths.joined(separator: ":"),
-            "HOME": FileManager.default.homeDirectoryForCurrentUser.path
-        ]
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = (searchPaths + [environment["PATH"] ?? ""]).filter { !$0.isEmpty }.joined(separator: ":")
+        environment["HOME"] = FileManager.default.homeDirectoryForCurrentUser.path
+        process.environment = environment
         do {
             try process.run()
         } catch {
