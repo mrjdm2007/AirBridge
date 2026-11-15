@@ -40,6 +40,15 @@ private val Paper = Color(0xFF101010)
 private val Card = Color(0xFF1B1B1B)
 private val Muted = Color(0xFF9A9A9A)
 
+private fun formatTransferBytes(bytes: Long): String {
+    if (bytes < 0L) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = 0
+    while (value >= 1000.0 && unit < units.lastIndex) { value /= 1000.0; unit++ }
+    return if (unit == 0) "${value.toLong()} ${units[unit]}" else String.format(java.util.Locale.US, "%.1f %s", value, units[unit])
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -175,6 +184,10 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                         if (AirBridgeState.transferActive) {
                             Text(AirBridgeState.transferLabel, fontSize = 10.sp, color = Muted)
                             LinearProgressIndicator(progress = { AirBridgeState.transferProgress.coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth(), color = Ink, trackColor = Paper)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("${formatTransferBytes(AirBridgeState.transferredBytes)} / ${formatTransferBytes(AirBridgeState.totalTransferBytes)}", fontSize = 10.sp, color = Muted)
+                                Text("${formatTransferBytes(AirBridgeState.transferSpeedBytesPerSecond)}/s", fontSize = 10.sp, color = Muted)
+                            }
                         }
                         Text("SEND SOMETHING", fontSize = 9.sp, color = Muted, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
