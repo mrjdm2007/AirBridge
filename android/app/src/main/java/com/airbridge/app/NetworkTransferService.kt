@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Intent
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
 import android.os.Handler
@@ -46,6 +47,7 @@ object AirBridgeState {
 
 class NetworkTransferService : Service() {
     private lateinit var nsd: NsdManager
+    private var multicastLock: WifiManager.MulticastLock? = null
     private var registration: NsdManager.RegistrationListener? = null
     private var discovery: NsdManager.DiscoveryListener? = null
     @Volatile private var server: ServerSocket? = null
@@ -55,6 +57,16 @@ class NetworkTransferService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotification()
+        // Keep multicast DNS packets available to NSD while this foreground service runs.
+        try {
+            val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+            multicastLock = wifi.createMulticastLock("AirBridge-mDNS").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (failure: Exception) {
+            AirBridgeState.update { AirBridgeState.status = "Multicast discovery unavailable: ${failure.localizedMessage}" }
+        }
         startServer()
         nsd = getSystemService(NSD_SERVICE) as NsdManager
         publishService()
@@ -183,7 +195,7 @@ class NetworkTransferService : Service() {
         val listener = object : NsdManager.DiscoveryListener {
             override fun onDiscoveryStarted(type: String) {}
             override fun onServiceFound(info: NsdServiceInfo) {
-                if (info.serviceType.contains("_airbridge._tcp") && info.serviceName == "AirBridge Mac") {
+                if (info.serviceType.contains("_airbridge._tcp") && info.serviceName.startsWith("AirBridge Mac")) {
                     nsd.resolveService(info, object : NsdManager.ResolveListener {
                         override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {}
                         override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
@@ -239,6 +251,8 @@ class NetworkTransferService : Service() {
         try { registration?.let { nsd.unregisterService(it) } } catch (_: Exception) {}
         try { server?.close() } catch (_: Exception) {}
         workers.shutdownNow()
+        try { multicastLock?.let { if (it.isHeld) it.release() } } catch (_: Exception) {}
+        multicastLock = null
         super.onDestroy()
     }
 }
