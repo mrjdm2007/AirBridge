@@ -184,6 +184,15 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
     var textDraft by remember { mutableStateOf(TextFieldValue("")) }
     var category by remember { mutableStateOf("Files") }
     val context = LocalContext.current
+    LaunchedEffect(AirBridgeState.directShareRequested, AirBridgeState.peers.size, AirBridgeState.pendingUris) {
+        if (AirBridgeState.directShareRequested && AirBridgeState.pendingUris.isNotEmpty()) {
+            val target = AirBridgeState.peers.firstOrNull()
+            if (target != null) {
+                AirBridgeState.directShareRequested = false
+                onSend(target)
+            }
+        }
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris.isNotEmpty()) {
             uris.forEach { uri -> try { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) {} }
