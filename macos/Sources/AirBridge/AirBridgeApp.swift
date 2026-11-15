@@ -119,6 +119,18 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
               closedWindow === window else { return }
         window = nil
     }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        guard let movedWindow = notification.object as? NSWindow,
+              movedWindow === window,
+              let visible = movedWindow.screen?.visibleFrame else { return }
+        var frame = movedWindow.frame
+        frame.size.width = min(frame.width, max(280, visible.width - 16))
+        frame.size.height = min(frame.height, max(260, visible.height - 32))
+        frame.origin.x = min(max(frame.origin.x, visible.minX + 8), visible.maxX - frame.width - 8)
+        frame.origin.y = min(max(frame.origin.y, visible.minY + 8), visible.maxY - frame.height - 8)
+        movedWindow.setFrame(frame, display: true, animate: false)
+    }
 }
 
 struct AirBridgePopover: View {
@@ -518,29 +530,3 @@ final class MTPController: ObservableObject {
         error = nil
         status = "Downloading \(file.name)…"
         Task {
-            do {
-                try await Task.detached(priority: .userInitiated) {
-                    try MTPService.download(file, to: destination)
-                }.value
-                status = "Saved \(file.name)"
-            } catch {
-                self.error = error.localizedDescription
-            }
-            isTransferring = false
-        }
-    }
-
-    private func reloadAfterTransfer() async {
-        do {
-            let result = try await Task.detached(priority: .userInitiated) {
-                try MTPService.listFiles()
-            }.value
-            files = result.files
-            deviceName = result.deviceName
-            isConnected = true
-        } catch {
-            self.error = error.localizedDescription
-            isConnected = false
-        }
-    }
-}
