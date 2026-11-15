@@ -21,6 +21,11 @@ import java.util.concurrent.Semaphore
 
 data class AirBridgePeer(val name: String, val host: String, val port: Int)
 
+object AirBridgeTransferControl {
+    @Volatile var activeReceiveSocket: Socket? = null
+    fun cancelReceive() { activeReceiveSocket?.close() }
+}
+
 object AirBridgeState {
     val peers = androidx.compose.runtime.mutableStateListOf<AirBridgePeer>()
     var status by androidx.compose.runtime.mutableStateOf("Starting local discovery…")
@@ -90,6 +95,7 @@ class NetworkTransferService : Service() {
                         continue
                     }
                     workers.execute {
+                        AirBridgeTransferControl.activeReceiveSocket = client
                         client.use { socket ->
                             try {
                                 socket.soTimeout = 120_000
@@ -123,6 +129,7 @@ class NetworkTransferService : Service() {
                             } catch (failure: Throwable) {
                                 AirBridgeState.update { AirBridgeState.transferActive = false; AirBridgeState.status = failure.localizedMessage ?: "Transfer failed" }
                             } finally {
+                                AirBridgeTransferControl.activeReceiveSocket = null
                                 receiveSlots.release()
                             }
                         }
