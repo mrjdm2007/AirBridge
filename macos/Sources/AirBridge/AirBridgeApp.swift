@@ -69,13 +69,13 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
 
         let screen = statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens.first
         let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1024, height: 768)
-        let trayHeight = min(560, max(360, visibleFrame.height - 80))
-        let trayWidth: CGFloat = min(374, max(320, visibleFrame.width - 32))
+        let trayHeight: CGFloat = 380
+        let trayWidth: CGFloat = 380
         let tray = AirBridgePopover()
         let hosting = NSHostingController(rootView: tray)
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: trayWidth, height: trayHeight),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
@@ -100,8 +100,8 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.contentViewController = hosting
-        panel.minSize = NSSize(width: 320, height: 300)
-        panel.maxSize = NSSize(width: max(320, visibleFrame.width - 16), height: max(300, visibleFrame.height - 32))
+        panel.minSize = NSSize(width: trayWidth, height: trayHeight)
+        panel.maxSize = NSSize(width: trayWidth, height: trayHeight)
         if let button = statusItem?.button, let buttonWindow = button.window {
             let buttonRect = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
             let x = min(max(buttonRect.midX - trayWidth / 2, visibleFrame.minX + 8), visibleFrame.maxX - trayWidth - 8)
@@ -155,257 +155,123 @@ struct AirBridgePopover: View {
     }
 
     var body: some View {
-        ScrollView(.vertical) {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                Image(systemName: "arrow.up.arrow.down.square.fill").font(.system(size: 20))
+        VStack(spacing: 9) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.up.arrow.down.square.fill").font(.system(size: 19))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AirBridge").font(.system(size: 17, weight: .semibold))
-                    Text(lan.peers.isEmpty ? "Waiting for connection" : "Connected · Moto Edge 50 Neo")
-                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    Text("AirBridge").font(.system(size: 15, weight: .semibold))
+                    Text(lan.peers.isEmpty ? "Searching for your phone…" : "Connected · Moto Edge 50 Neo")
+                        .font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
                 }
-                Spacer()
-                Button { showHistory.toggle() } label: {
-                    Image(systemName: "clock").font(.system(size: 13, weight: .medium))
-                }
-                .buttonStyle(.plain).help(showHistory ? "Hide history" : "Show history")
+                Spacer(minLength: 4)
+                modeButton("Wireless", icon: "wifi")
+                modeButton("Wired", icon: "cable.connector").frame(maxWidth: 76)
                 Button { AirBridgeTrayWindow.shared.close() } label: {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
                         .frame(width: 22, height: 22)
                         .background(Color.primary.opacity(0.09), in: Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Close Drop Tray")
+                }.buttonStyle(.plain).help("Close Drop Tray")
             }
-
-            HStack(spacing: 6) {
-                modeButton("Wireless", icon: "wifi")
-                modeButton("Wired", icon: "cable.connector")
-            }
-
-            if showHistory {
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Text("RECENT TRANSFERS").font(.system(size: 9, weight: .semibold)).tracking(0.8).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Clear") { lan.clearHistory() }.font(.system(size: 10)).buttonStyle(.plain)
-                    }
-                    if lan.history.isEmpty {
-                        Text("No transfers yet").font(.system(size: 11)).foregroundStyle(.secondary)
-                    } else {
-                        ForEach(lan.history.prefix(8)) { item in
-                            HStack(spacing: 8) {
-                                Image(systemName: item.direction == "Sent" ? "arrow.up.circle" : "arrow.down.circle").foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.filename).font(.system(size: 10, weight: .medium)).lineLimit(1)
-                                    Text(item.date.formatted(date: .omitted, time: .shortened)).font(.system(size: 9)).foregroundStyle(.tertiary)
-                                }
-                                Spacer()
-                                Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: item.bytes), countStyle: .file))
-                                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
-                            }
+            if selectedMode == "Wireless" {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(Color.primary.opacity(0.045))
+                    RoundedRectangle(cornerRadius: 16)
+                        .strokeBorder(Color.primary.opacity(0.12), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    VStack(spacing: 8) {
+                        Image(systemName: "tray.and.arrow.down.fill").font(.system(size: 31, weight: .light)).foregroundStyle(.secondary)
+                        Text(selectedURLs.isEmpty ? "Drop files here" : "\(selectedURLs.count) item(s) ready")
+                            .font(.system(size: 13, weight: .medium))
+                        Text(selectedURLs.isEmpty ? "Drag files from anywhere on your Mac" : ByteCountFormatter.string(fromByteCount: selectedBytes, countStyle: .file))
+                            .font(.system(size: 10)).foregroundStyle(.secondary)
+                        if !selectedURLs.isEmpty {
+                            Text(selectedURLs.prefix(2).map(\.lastPathComponent).joined(separator: " · "))
+                                .font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1)
                         }
-                    }
-                }
-                .padding(10).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
-            } else if selectedMode == "Wireless" {
-                VStack(spacing: 9) {
-                    HStack(spacing: 7) {
-                        Circle().fill(lan.peers.isEmpty ? Color.secondary : Color.green).frame(width: 6, height: 6)
-                        Text(lan.peers.isEmpty ? "Waiting for connection" : "Moto Edge 50 Neo connected")
-                            .font(.system(size: 11, weight: .medium))
-                        Spacer()
-                    }
-                    if lan.isReceiving {
-                        ProgressView(value: lan.totalReceiveBytes > 0 ? Double(lan.receivedBytes) / Double(lan.totalReceiveBytes) : 0)
-                        HStack(spacing: 6) {
+                        if lan.isReceiving {
+                            ProgressView(value: lan.totalReceiveBytes > 0 ? Double(lan.receivedBytes) / Double(lan.totalReceiveBytes) : 0).frame(maxWidth: 190)
                             Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.receivedBytes), countStyle: .file)) received")
-                                .font(.system(size: 9, design: .monospaced))
-                            Spacer()
-                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(max(0, lan.receiveSpeedBytesPerSecond)), countStyle: .file))/s")
-                                .font(.system(size: 9, design: .monospaced))
-                        }
-                        HStack {
-                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.totalReceiveBytes > lan.receivedBytes ? lan.totalReceiveBytes - lan.receivedBytes : 0), countStyle: .file)) remaining")
                                 .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Cancel") { lan.cancelTransfer() }
-                        }.font(.system(size: 9)).foregroundStyle(.secondary)
-                    } else if lan.isTransferring {
-                        ProgressView(value: lan.progress)
-                        HStack(spacing: 6) {
-                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.transferredBytes), countStyle: .file)) transferred")
-                                .font(.system(size: 9, design: .monospaced))
-                            Spacer()
-                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(max(0, lan.transferSpeedBytesPerSecond)), countStyle: .file))/s")
-                                .font(.system(size: 9, design: .monospaced))
-                        }
-                        HStack(spacing: 6) {
-                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.remainingTransferBytes), countStyle: .file)) remaining")
+                        } else if lan.isTransferring {
+                            ProgressView(value: lan.progress).frame(maxWidth: 190)
+                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.transferredBytes), countStyle: .file)) sent · \(ByteCountFormatter.string(fromByteCount: Int64(max(0, lan.transferSpeedBytesPerSecond)), countStyle: .file))/s")
                                 .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
-                            Spacer()
-                            Text(lan.remainingTransferTimeLabel)
-                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                            Button("Cancel transfer") { lan.cancelTransfer() }.font(.system(size: 9))
                         }
-                        HStack {
-                            Text(lan.status).lineLimit(1)
-                            Spacer()
-                            Button("Cancel") { lan.cancelTransfer() }.disabled(!lan.canCancelTransfer)
-                        }.font(.system(size: 9)).foregroundStyle(.secondary)
-                    } else {
-                        HStack(spacing: 3) {
-                            ForEach(["Files", "Photos", "Audio", "Apps", "Text"], id: \.self) { category in
-                                Button(category) { selectedCategory = category }
-                                    .font(.system(size: 9, weight: selectedCategory == category ? .semibold : .regular))
-                                    .buttonStyle(.plain)
-                                    .foregroundStyle(selectedCategory == category ? .primary : .secondary)
-                                    .padding(.horizontal, 6).padding(.vertical, 4)
-                                    .background(selectedCategory == category ? Color.primary.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 7))
-                            }
-                        }
-                        VStack(spacing: 6) {
-                            Image(systemName: selectedCategory == "Text" ? "text.alignleft" : "tray.and.arrow.down").font(.system(size: 24)).foregroundStyle(.secondary)
-                            Text(selectedCategory == "Text" ? "Paste copied text with ⌘V" : "Drop items here or choose files").font(.system(size: 11, weight: .medium))
-                            Text("Manual transfer · nothing is synced automatically").font(.system(size: 9)).foregroundStyle(.tertiary)
-                        }
-                        .frame(maxWidth: .infinity).padding(.vertical, 13)
-                        .contentShape(RoundedRectangle(cornerRadius: 11))
-                        .contextMenu {
-                            Button {
-                                let text = NSPasteboard.general.string(forType: .string)
-                                guard let text, !text.isEmpty else {
-                                    dropError = "There is no text on the clipboard."
-                                    return
-                                }
-                                let url = FileManager.default.temporaryDirectory.appendingPathComponent("AirBridge-Text-\(UUID().uuidString).txt")
-                                do {
-                                    try Data(text.utf8).write(to: url, options: .atomic)
-                                    selectedURLs.append(url)
-                                    selectedCategory = "Text"
-                                    dropError = nil
-                                } catch { dropError = error.localizedDescription }
-                            } label: {
-                                Label("Paste text", systemImage: "doc.on.clipboard")
-                            }
-                        }
-                        .onPasteCommand(of: [.plainText]) { providers in
-                            for provider in providers {
-                                _ = provider.loadObject(ofClass: String.self) { value, _ in
-                                    guard let value, !value.isEmpty else { return }
-                                    let url = FileManager.default.temporaryDirectory.appendingPathComponent("AirBridge-Text-\(UUID().uuidString).txt")
-                                    do {
-                                        try value.data(using: .utf8)?.write(to: url, options: .atomic)
-                                        DispatchQueue.main.async { selectedURLs.append(url) }
-                                    } catch { DispatchQueue.main.async { dropError = error.localizedDescription } }
-                                }
-                            }
-                        }
-                    }
-                    if !selectedURLs.isEmpty {
-                        Divider()
-                        ForEach(Array(selectedURLs.enumerated()), id: \.offset) { index, url in
-                            HStack(spacing: 7) {
-                                Image(systemName: iconFor(url)).foregroundStyle(.secondary)
-                                Text(url.lastPathComponent).font(.system(size: 10)).lineLimit(1)
-                                Spacer()
-                                Text(ByteCountFormatter.string(fromByteCount: (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value ?? 0, countStyle: .file))
-                                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
-                                Button { selectedURLs.remove(at: index) } label: {
-                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
-                                }.buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    if let error = dropError ?? lan.error {
-                        Text(error).font(.system(size: 9)).foregroundStyle(.red).lineLimit(2)
-                    }
+                    }.padding(12)
                 }
-                .padding(11).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
+                .frame(height: 190)
+                .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+                    for provider in providers {
+                        _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                            guard let url else { return }
+                            DispatchQueue.main.async { if !selectedURLs.contains(url) { selectedURLs.append(url) } }
+                        }
+                    }
+                    return true
+                }
             } else {
-                VStack(spacing: 9) {
-                    HStack {
-                        Image(systemName: mtp.isConnected ? "cable.connector" : "cable.connector.slash")
-                        Text(mtp.isConnected ? "USB · MTP connected" : "Waiting for USB connection")
-                        Spacer()
-                        Button { mtp.refresh() } label: { Image(systemName: "arrow.clockwise") }.buttonStyle(.plain)
-                    }.font(.system(size: 11, weight: .medium))
+                VStack(spacing: 8) {
+                    Image(systemName: mtp.isConnected ? "cable.connector" : "cable.connector.slash")
+                        .font(.system(size: 27)).foregroundStyle(.secondary)
+                    Text(mtp.isConnected ? "USB · MTP connected" : "Waiting for USB connection").font(.system(size: 12, weight: .medium))
+                    Text(mtp.isConnected ? "\(mtp.files.count) phone files available" : "Unlock your phone and choose File Transfer")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                    Button("Refresh USB") { mtp.refresh() }.buttonStyle(.bordered)
                     if mtp.isConnected {
-                        Text("\(mtp.files.count) phone files available").font(.system(size: 10)).foregroundStyle(.secondary)
-                        Button("Select files to send") { showingMTPImporter = true }.buttonStyle(.bordered)
-                        ForEach(mtp.files.prefix(5)) { file in
-                            HStack {
-                                Text(file.name).font(.system(size: 10)).lineLimit(1)
-                                Spacer()
-                                Button { mtp.download(file) } label: { Image(systemName: "arrow.down.to.line") }.buttonStyle(.plain)
-                            }
-                        }
-                    } else {
-                        Text("Unlock your phone, connect by USB and choose File Transfer.").font(.system(size: 10)).foregroundStyle(.secondary)
+                        Button("Send selected files to phone") { showingMTPImporter = true }.buttonStyle(.borderedProminent)
                     }
-                    if !mtp.status.isEmpty { Text(mtp.status).font(.system(size: 9)).foregroundStyle(.secondary) }
-                    if let error = mtp.error { Text(error).font(.system(size: 9)).foregroundStyle(.red) }
-                }.padding(11).background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 13))
-            }
-
-            HStack(spacing: 8) {
-                Button {
-                    if selectedMode == "Wireless" { showingImporter = true }
-                    else { showingMTPImporter = true }
-                } label: {
-                    Label("Select files", systemImage: "plus")
-                        .frame(maxWidth: .infinity)
+                    if let error = mtp.error { Text(error).font(.system(size: 9)).foregroundStyle(.red).lineLimit(2) }
                 }
-                .buttonStyle(.bordered)
-                .disabled(selectedMode == "Wireless" && lan.isTransferring)
+                .frame(maxWidth: .infinity).frame(height: 190)
+                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
             }
             if selectedMode == "Wireless" {
                 HStack(spacing: 8) {
-                    Text(selectedURLs.isEmpty ? "Nothing selected" : "\(selectedURLs.count) items · \(ByteCountFormatter.string(fromByteCount: selectedBytes, countStyle: .file))")
-                        .font(.system(size: 9, weight: .medium, design: .rounded)).foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Cancel") { selectedURLs.removeAll(); dropError = nil }
-                        .buttonStyle(.plain).font(.system(size: 10)).disabled(selectedURLs.isEmpty || lan.isTransferring)
-                    Button("Send") {
+                    Button { showingImporter = true } label: {
+                        Label("Choose files", systemImage: "plus").frame(maxWidth: .infinity)
+                    }.buttonStyle(.bordered).disabled(lan.isTransferring)
+                    Button {
                         guard let peer = lan.peers.first else { return }
                         lan.send(selectedURLs, to: peer)
                         selectedURLs.removeAll()
-                    }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
-                    .disabled(selectedURLs.isEmpty || lan.peers.isEmpty || lan.isTransferring)
+                    } label: {
+                        Label("Send", systemImage: "arrow.up").frame(maxWidth: .infinity)
+                    }.buttonStyle(.borderedProminent)
+                        .disabled(selectedURLs.isEmpty || lan.peers.isEmpty || lan.isTransferring)
+                }
+                HStack(spacing: 6) {
+                    Text(lan.peers.isEmpty ? "Phone not found · same hotspot required" : "Phone ready")
+                    Spacer()
+                    if !selectedURLs.isEmpty { Button("Clear") { selectedURLs.removeAll() }.buttonStyle(.plain) }
+                }.font(.system(size: 9)).foregroundStyle(.secondary)
+                if let error = dropError ?? lan.error {
+                    Text(error).font(.system(size: 9)).foregroundStyle(.red).lineLimit(1)
                 }
             } else {
                 HStack {
-                    Text("USB MTP · NO ADB").font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(.tertiary)
+                    Button("Choose files to send") { showingMTPImporter = true }.buttonStyle(.bordered)
                     Spacer()
-                    Text("AIRBRIDGE").font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(.tertiary)
+                    Text("USB MTP").font(.system(size: 8, weight: .semibold)).foregroundStyle(.tertiary)
                 }
-            }
-            if selectedMode == "Wireless" {
-                Text("LOCAL NETWORK · NOT ENCRYPTED")
-                    .font(.system(size: 8, weight: .semibold)).tracking(0.7).foregroundStyle(.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(12)
-        .frame(width: 350)
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(width: 356, height: 336)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .preferredColorScheme(.dark)
-        // The entire tray is a drop target, not just the central placeholder.
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             for provider in providers {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     guard let url else { return }
-                    DispatchQueue.main.async { selectedURLs.append(url) }
+                    DispatchQueue.main.async { if !selectedURLs.contains(url) { selectedURLs.append(url) } }
                 }
             }
             return true
         }
-        .fileImporter(isPresented: $showingImporter, allowedContentTypes: selectedTypes, allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $showingImporter, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             switch result {
-            case .success(let urls): selectedURLs.append(contentsOf: urls)
+            case .success(let urls): selectedURLs.append(contentsOf: urls.filter { !selectedURLs.contains($0) })
             case .failure(let failure): dropError = failure.localizedDescription
             }
         }
@@ -417,15 +283,9 @@ struct AirBridgePopover: View {
         }
         .onAppear { lan.start() }
         .alert("A file named \(lan.duplicateFilename) already exists", isPresented: $lan.showDuplicateAlert) {
-            Button("Replace", role: .destructive) {
-                lan.resolveDuplicate(choice: .replace)
-            }
-            Button("Keep Both") {
-                lan.resolveDuplicate(choice: .keepBoth)
-            }
-            Button("Cancel Transfer", role: .cancel) {
-                lan.resolveDuplicate(choice: .cancel)
-            }
+            Button("Replace", role: .destructive) { lan.resolveDuplicate(choice: .replace) }
+            Button("Keep Both") { lan.resolveDuplicate(choice: .keepBoth) }
+            Button("Cancel Transfer", role: .cancel) { lan.resolveDuplicate(choice: .cancel) }
         } message: {
             Text("There is already a file with this name in Downloads. Replace it, save this one with a new name, or cancel the transfer.")
         }
