@@ -475,7 +475,8 @@ final class MTPController: ObservableObject {
     @Published var error: String?
 
     func refresh() {
-        guard !isLoading && !isTransferring else { return }        isLoading = true
+        guard !isLoading && !isTransferring else { return }
+        isLoading = true
         error = nil
         Task {
             do {
