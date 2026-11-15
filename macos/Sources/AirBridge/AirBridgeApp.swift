@@ -17,17 +17,37 @@ func airBridgeItemSize(_ url: URL) -> Int64 {
 
 @main
 struct AirBridgeApp: App {
+    @NSApplicationDelegateAdaptor(AirBridgeAppDelegate.self) private var appDelegate
+
     var body: some Scene {
-        // Keep the menu-bar control lightweight. The actual tray lives in its own
-        // floating NSWindow so Finder/file panels can take focus without dismissing it.
-        MenuBarExtra("AirBridge", systemImage: "arrow.up.arrow.down.square") {
-            Button {
-                AirBridgeTrayWindow.shared.show()
-            } label: {
-                Label("Open Drop Tray", systemImage: "tray.and.arrow.down")
-            }
+        // AirBridge is a menu-bar utility; the status-item click opens the floating
+        // Drop Tray directly, without presenting an intermediate menu.
+        Settings {
+            EmptyView()
         }
-        .menuBarExtraStyle(.menu)
+    }
+}
+
+@MainActor
+final class AirBridgeAppDelegate: NSObject, NSApplicationDelegate {
+    private var statusItem: NSStatusItem?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "arrow.up.arrow.down.square", accessibilityDescription: "AirBridge")
+            button.image?.isTemplate = true
+            button.toolTip = "AirBridge · Open Drop Tray"
+            button.target = self
+            button.action = #selector(openDropTray(_:))
+        }
+        statusItem = item
+    }
+
+    @objc private func openDropTray(_ sender: Any?) {
+        AirBridgeTrayWindow.shared.show()
     }
 }
 
