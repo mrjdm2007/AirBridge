@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
         handleShare(intent)
         val service = Intent(this, NetworkTransferService::class.java)
         if (android.os.Build.VERSION.SDK_INT >= 26) startForegroundService(service) else startService(service)
-        setContent { AirBridgeScreen(onSend = { peer -> sendPending(peer) }, onAddText = { text -> addTextItem(text) }) }
+        setContent { AirBridgeScreen(onSend = { peer -> sendPending(peer) }, onAddText = { text -> addTextItem(text) }, onCancelSend = { cancelPendingSend() }) }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -179,7 +179,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String) -> Unit) {
+private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String) -> Unit, onCancelSend: () -> Unit) {
     var selectedMode by remember { mutableStateOf("Wireless") }
     var textDraft by remember { mutableStateOf(TextFieldValue("")) }
     var category by remember { mutableStateOf("Files") }
@@ -225,7 +225,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                             val remaining = (AirBridgeState.totalTransferBytes - AirBridgeState.transferredBytes).coerceAtLeast(0L)
                             val speed = AirBridgeState.transferSpeedBytesPerSecond
                             Text(if (speed > 0L) "${formatTransferBytes(remaining)} remaining · about ${((remaining + speed - 1) / speed)} sec" else "Calculating remaining time…", fontSize = 9.sp, color = Muted)
-                            OutlinedButton(onClick = { cancelPendingSend() }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) { Text("Cancel transfer", fontSize = 11.sp) }
+                            OutlinedButton(onClick = onCancelSend, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) { Text("Cancel transfer", fontSize = 11.sp) }
                         }
                         Text("SEND SOMETHING", fontSize = 9.sp, color = Muted, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
