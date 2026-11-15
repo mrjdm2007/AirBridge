@@ -173,6 +173,7 @@ class MainActivity : ComponentActivity() {
     private fun cancelPendingSend() {
         cancelSendRequested = true
         activeSendSocket?.close()
+        AirBridgeTransferControl.cancelReceive()
         AirBridgeState.status = "Cancelling transfer…"
     }
 }
