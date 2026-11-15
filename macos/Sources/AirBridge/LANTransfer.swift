@@ -319,6 +319,10 @@ final class LANTransferController: ObservableObject {
         let tcpOptions = NWProtocolTCP.Options()
         tcpOptions.noDelay = true
         let parameters = NWParameters(tls: nil, tcp: tcpOptions)
+        // Match the peer-to-peer-capable parameters used by discovery and the listener.
+        // Without this, a Bonjour endpoint discovered over the phone hotspot can resolve,
+        // yet the outgoing TCP connection may fail to use that interface consistently.
+        parameters.includePeerToPeer = true
         let connection = NWConnection(to: endpoint, using: parameters)
         connectionBox.set(connection)
         defer { connectionBox.set(nil); connection.cancel() }
