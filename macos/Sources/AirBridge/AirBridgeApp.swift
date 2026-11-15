@@ -71,13 +71,15 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
         let hosting = NSHostingController(rootView: tray)
         let panel = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 374, height: 560),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
         panel.title = "AirBridge Drop Tray"
-        panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .hidden
+        // Keep the native title bar visible: it supplies reliable window
+        // dragging and the standard macOS close/minimize controls.
+        panel.titlebarAppearsTransparent = false
+        panel.titleVisibility = .visible
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
         panel.delegate = self
@@ -93,6 +95,10 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
 
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    func close() {
+        window?.performClose(nil)
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -131,6 +137,13 @@ struct AirBridgePopover: View {
                     Image(systemName: "clock").font(.system(size: 13, weight: .medium))
                 }
                 .buttonStyle(.plain).help(showHistory ? "Hide history" : "Show history")
+                Button { AirBridgeTrayWindow.shared.close() } label: {
+                    Image(systemName: "xmark").font(.system(size: 11, weight: .semibold))
+                        .frame(width: 22, height: 22)
+                        .background(Color.primary.opacity(0.09), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Close Drop Tray")
             }
 
             HStack(spacing: 6) {
