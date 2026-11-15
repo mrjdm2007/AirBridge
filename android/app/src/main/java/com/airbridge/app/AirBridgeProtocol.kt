@@ -21,7 +21,7 @@ data class AirBridgeReceivedItem(val name: String, val textContent: String? = nu
 object AirBridgeProtocol {
     private val magic = byteArrayOf(0x41, 0x42, 0x52, 0x31) // ABR1
     private const val MAX_TRANSFER_BYTES = 20L * 1024L * 1024L * 1024L
-    private const val IO_BUFFER_BYTES = 1024 * 1024
+    private const val IO_BUFFER_BYTES = 4 * 1024 * 1024
 
     fun receive(context: Context, socket: Socket, onProgress: (Long, Long) -> Unit = { _, _ -> }): AirBridgeReceivedItem {
         socket.soTimeout = 120_000
