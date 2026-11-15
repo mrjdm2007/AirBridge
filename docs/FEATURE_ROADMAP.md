@@ -5,7 +5,7 @@ This roadmap separates release-critical work from optional convenience features.
 ## Current implementation notes
 
 - Implemented: Android and macOS LAN file transfers, Bonjour/NSD discovery, SHA-256 integrity verification, Android share-sheet sending, multi-selection sending, macOS MTP listing/upload/download through libmtp, Android and macOS send progress, macOS persistent Wi-Fi transfer history, macOS outgoing-transfer cancellation, and periodic MTP connection polling.
-- Partially implemented: transfer management (progress and a basic Mac history only), USB/MTP (manual refresh plus periodic polling; actual device/phone compatibility still needs testing), cancellation (macOS outgoing LAN sends only).
+- Partially implemented: transfer management (per-transfer progress, speed and ETA on the active transfer; basic Mac history only), USB/MTP (manual refresh plus periodic polling; actual device/phone compatibility still needs testing), cancellation (macOS outgoing/incoming LAN and Android outgoing/incoming LAN sockets; MTP cancellation and end-to-end cleanup tests remain).
 - Not implemented: authenticated pairing, encrypted LAN transport, resumable transfers, speed/ETA, searchable cross-platform history, clipboard sync, robust folder transfers, and trusted-device management.
 - Security warning: the current ABR1 LAN protocol is plaintext and unauthenticated. Use only on a trusted local network; do not transfer sensitive files until authenticated encryption is implemented.
 
@@ -14,7 +14,7 @@ This roadmap separates release-critical work from optional convenience features.
 - [ ] **Authenticated device pairing** — show a short-lived pairing code/QR on the receiving device; require explicit approval on first connection; remember trusted devices with a revoke option.
 - [ ] **Encrypted transport** — use TLS with per-device identity keys established during pairing. Reject unknown or changed identities and never silently fall back to plaintext.
 - [ ] **Transfer queue** — queue multiple files, show per-file and aggregate progress, speed, ETA, and clear success/failure states.
-- [ ] **Cancel and safe cleanup** — macOS outgoing LAN send cancellation is implemented; Android sends, incoming transfers and MTP cancellation still need cancellation controls and cleanup tests.
+- [ ] **Cancel and safe cleanup** — macOS and Android LAN send/receive sockets now expose cancellation controls; MTP cancellation and automated cleanup tests remain.
 - [ ] **Resumable transfers** — persist transfer ID, file size, modification metadata and verified chunk offsets; revalidate the source and destination before resuming.
 - [ ] **Reliable background transfers** — Android foreground-service notification while active; macOS menu-bar/background operation with explicit status.
 - [ ] **End-to-end verification** — retain SHA-256 verification and add tests for truncated, reordered, duplicate and corrupted chunks.
