@@ -73,19 +73,26 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
         let trayWidth: CGFloat = min(374, max(320, visibleFrame.width - 32))
         let tray = AirBridgePopover()
         let hosting = NSHostingController(rootView: tray)
-        let panel = NSWindow(
+        let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: trayWidth, height: trayHeight),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.worksWhenModal = true
+        panel.animationBehavior = .utilityWindow
         panel.title = "AirBridge Drop Tray"
         // Keep the native title bar visible: it supplies reliable window
         // dragging and the standard macOS close/minimize controls.
         panel.titlebarAppearsTransparent = false
         panel.titleVisibility = .visible
+        panel.isMovable = true
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
+        panel.autosaveName = "AirBridgeDropTray"
         panel.delegate = self
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -95,7 +102,6 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
         panel.contentViewController = hosting
         panel.minSize = NSSize(width: 320, height: 300)
         panel.maxSize = NSSize(width: max(320, visibleFrame.width - 16), height: max(300, visibleFrame.height - 32))
-        panel.setFrameAutosaveName("AirBridgeDropTray")
         if let button = statusItem?.button, let buttonWindow = button.window {
             let buttonRect = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
             let x = min(max(buttonRect.midX - trayWidth / 2, visibleFrame.minX + 8), visibleFrame.maxX - trayWidth - 8)
@@ -125,8 +131,8 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
               movedWindow === window,
               let visible = movedWindow.screen?.visibleFrame else { return }
         var frame = movedWindow.frame
-        frame.size.width = min(frame.width, max(280, visible.width - 16))
-        frame.size.height = min(frame.height, max(260, visible.height - 32))
+        frame.size.width = min(frame.width, max(320, visible.width - 16))
+        frame.size.height = min(frame.height, max(300, visible.height - 32))
         frame.origin.x = min(max(frame.origin.x, visible.minX + 8), visible.maxX - frame.width - 8)
         frame.origin.y = min(max(frame.origin.y, visible.minY + 8), visible.maxY - frame.height - 8)
         movedWindow.setFrame(frame, display: true, animate: false)
