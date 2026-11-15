@@ -22,10 +22,10 @@ Implemented in the current source:
 
 - **Pairing, authentication and transport encryption are not implemented.** Do not use this prototype on an untrusted network or for sensitive files.
 - Wi-Fi transfers have not yet been verified between the actual Moto Edge 50 Neo and MacBook.
-- Mac build and MTP hardware operation have not been verified; the macOS Actions jobs have been cancelled before producing an artifact.
+- The macOS and Android CI builds now compile, but successful CI is not hardware validation; MTP hardware operation and real-device Wi-Fi transfers still need testing.
 - MTP currently requires Homebrew libmtp tools and manual USB File Transfer mode selection; automatic USB detection is not implemented.
 - Clipboard synchronization is not implemented.
-- Transfer resume, user-facing progress/cancellation, robust reconnect and extensive error recovery are not implemented.
+- Active-transfer progress, speed/ETA display and LAN socket cancellation are implemented on Android and macOS; resumable transfers, MTP cancellation, robust reconnect and extensive error recovery are not implemented.
 - Mac drag-and-drop sending and trusted-device persistence are not yet implemented.
 
 ## Feature roadmap
