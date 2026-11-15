@@ -28,10 +28,27 @@ final class LANTransferController: ObservableObject {
     @Published private(set) var totalTransferBytes: UInt64 = 0
     @Published private(set) var transferSpeedBytesPerSecond: Double = 0
     @Published private(set) var isTransferring = false
+    @Published private(set) var isReceiving = false
+    @Published private(set) var receivedBytes: UInt64 = 0
+    @Published private(set) var totalReceiveBytes: UInt64 = 0
+    @Published private(set) var receiveSpeedBytesPerSecond: Double = 0
     @Published private(set) var history: [TransferHistoryEntry] = []
     @Published private(set) var canCancelTransfer = false
     private var activeConnection = LockedBox<NWConnection?>(nil)
+    private var activeIncomingConnection = LockedBox<NWConnection?>(nil)
+    private var receiveSampleTime: TimeInterval = 0
+    private var receiveSampleBytes: UInt64 = 0
     private let cancellation = LockedBox(false)
+
+    var remainingTransferBytes: UInt64 {
+        totalTransferBytes > transferredBytes ? totalTransferBytes - transferredBytes : 0
+    }
+
+    var remainingTransferTimeLabel: String {
+        guard transferSpeedBytesPerSecond > 0, remainingTransferBytes > 0 else { return remainingTransferBytes == 0 ? "Finishing…" : "Estimating…" }
+        let seconds = Int(ceil(Double(remainingTransferBytes) / transferSpeedBytesPerSecond))
+        return seconds >= 60 ? "~\(seconds / 60)m \(seconds % 60)s left" : "~\(seconds)s left"
+    }
 
     private let historyKey = "airbridge.lan.transfer-history.v1"
     private let queue = DispatchQueue(label: "com.airbridge.lan", qos: .userInitiated)
@@ -191,10 +208,16 @@ final class LANTransferController: ObservableObject {
     }
 
     func cancelTransfer() {
-        guard isTransferring else { return }
-        cancellation.set(true)
-        activeConnection.get()?.cancel()
-        status = "Cancelling transfer…"
+        if isTransferring {
+            cancellation.set(true)
+            activeConnection.get()?.cancel()
+            status = "Cancelling transfer…"
+        } else if isReceiving {
+            status = "Cancelling incoming transfer…"
+            activeIncomingConnection.get()?.cancel()
+            isReceiving = false
+            activeIncomingConnection.set(nil)
+        }
     }
 
     nonisolated private static func sendFile(_ url: URL, endpoint: NWEndpoint, queue: DispatchQueue, connectionBox: LockedBox<NWConnection?>, isCancelled: @escaping @Sendable () -> Bool, onProgress: @escaping @Sendable (UInt64, UInt64) -> Void) throws {
@@ -288,31 +311,74 @@ final class LANTransferController: ObservableObject {
     }
 
     private func receive(on connection: NWConnection, parser: IncomingParser) {
+        activeIncomingConnection.set(connection)
+        if !isReceiving {
+            isReceiving = true
+            receivedBytes = 0
+            totalReceiveBytes = 0
+            receiveSpeedBytesPerSecond = 0
+            receiveSampleTime = 0
+            receiveSampleBytes = 0
+        }
         connection.receive(minimumIncompleteLength: 1, maximumLength: 1024 * 1024) { [weak self] data, _, complete, error in
             if let data, !data.isEmpty {
                 do {
                     if try parser.consume(data) {
                         connection.send(content: Data([0x06]), completion: .contentProcessed { _ in connection.cancel() })
                         Task { @MainActor in
-                            self?.status = "Received \(parser.filename) in Downloads/AirBridge"
+                            self?.activeIncomingConnection.set(nil)
+                            self?.isReceiving = false
+                            self?.receivedBytes = parser.transferSize
+                            self?.totalReceiveBytes = parser.transferSize
+                            self?.receiveSpeedBytesPerSecond = 0
+                            self?.status = "Received \(parser.filename) in Downloads"
                             self?.record(TransferHistoryEntry(id: UUID(), filename: parser.filename, direction: "Received", peer: "Android device", bytes: parser.transferSize, date: Date(), succeeded: true))
                         }
                         return
                     }
+                    let bytes = parser.bytesWritten
+                    let total = parser.transferSize
+                    let now = Date().timeIntervalSinceReferenceDate
+                    Task { @MainActor in
+                        guard let self else { return }
+                        self.isReceiving = true
+                        self.receivedBytes = bytes
+                        self.totalReceiveBytes = total
+                        if self.receiveSampleTime > 0 && now > self.receiveSampleTime {
+                            self.receiveSpeedBytesPerSecond = Double(bytes - min(bytes, self.receiveSampleBytes)) / (now - self.receiveSampleTime)
+                        }
+                        self.receiveSampleTime = now
+                        self.receiveSampleBytes = bytes
+                        self.status = "Receiving \(parser.filename)…"
+                    }
                 } catch {
                     parser.abort()
-                    Task { @MainActor in self?.error = error.localizedDescription }
+                    Task { @MainActor in
+                        self?.activeIncomingConnection.set(nil)
+                        self?.isReceiving = false
+                        self?.error = error.localizedDescription
+                    }
                     connection.cancel()
                     return
                 }
             }
             if let error {
                 parser.abort()
-                Task { @MainActor in self?.error = "Incoming transfer: \(error.localizedDescription)" }
+                Task { @MainActor in
+                    self?.activeIncomingConnection.set(nil)
+                    self?.isReceiving = false
+                    if self?.status != "Cancelling incoming transfer…" {
+                        self?.error = "Incoming transfer: \(error.localizedDescription)"
+                    }
+                }
                 connection.cancel()
             } else if complete {
                 parser.abort()
-                Task { @MainActor in self?.error = "The sender disconnected before the file completed." }
+                Task { @MainActor in
+                    self?.activeIncomingConnection.set(nil)
+                    self?.isReceiving = false
+                    self?.error = "The sender disconnected before the file completed."
+                }
                 connection.cancel()
             } else {
                 Task { @MainActor in self?.receive(on: connection, parser: parser) }
@@ -332,6 +398,7 @@ private final class IncomingParser: @unchecked Sendable {
     private var temporaryURL: URL?
     private(set) var filename = "file"
     var transferSize: UInt64 { expectedSize }
+    var bytesWritten: UInt64 { written }
 
     func consume(_ data: Data) throws -> Bool {
         buffer.append(data)
@@ -371,8 +438,8 @@ private final class IncomingParser: @unchecked Sendable {
             cleanup()
             throw LANError.integrity
         }
-        let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].appendingPathComponent("AirBridge", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // Save directly into the user's Downloads folder (not Downloads/AirBridge).
+        let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
         let destination = uniqueDestination(in: directory, filename: filename)
         guard let temporaryURL else { throw LANError.badHeader }
         try FileManager.default.moveItem(at: temporaryURL, to: destination)
