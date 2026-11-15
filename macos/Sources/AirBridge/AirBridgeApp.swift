@@ -369,6 +369,19 @@ struct AirBridgePopover: View {
             }
         }
         .onAppear { lan.start() }
+        .alert("A file named \(lan.duplicateFilename) already exists", isPresented: $lan.showDuplicateAlert) {
+            Button("Replace", role: .destructive) {
+                lan.resolveDuplicate(choice: .replace)
+            }
+            Button("Keep Both") {
+                lan.resolveDuplicate(choice: .keepBoth)
+            }
+            Button("Cancel Transfer", role: .cancel) {
+                lan.resolveDuplicate(choice: .cancel)
+            }
+        } message: {
+            Text("There is already a file with this name in Downloads. Replace it, save this one with a new name, or cancel the transfer.")
+        }
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 20_000_000_000)
