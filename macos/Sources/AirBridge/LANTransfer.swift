@@ -141,6 +141,8 @@ final class LANTransferController: ObservableObject {
         isTransferring = true
         canCancelTransfer = true
         cancellation.set(false)
+        // Surface the floating tray as the live transfer notification.
+        AirBridgeTrayWindow.shared.show()
         let connectionBox = activeConnection
         let cancellationFlag = cancellation
         let transferQueue = queue
@@ -313,6 +315,8 @@ final class LANTransferController: ObservableObject {
     private func receive(on connection: NWConnection, parser: IncomingParser) {
         activeIncomingConnection.set(connection)
         if !isReceiving {
+            // Bring up the floating tray automatically for incoming transfers too.
+            AirBridgeTrayWindow.shared.show()
             isReceiving = true
             receivedBytes = 0
             totalReceiveBytes = 0
