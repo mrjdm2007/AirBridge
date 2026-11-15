@@ -32,17 +32,20 @@ struct AirBridgeApp: App {
 }
 
 @MainActor
-final class AirBridgeTrayWindow {
+final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
     static let shared = AirBridgeTrayWindow()
     private var window: NSWindow?
 
     func show() {
-        if let window {
+        if let window, window.isVisible || window.isMiniaturized {
             if window.isMiniaturized { window.deminiaturize(nil) }
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
             return
         }
+        // A closed NSWindow must be recreated; retaining the old instance alone
+        // can leave the menu-bar command pointing at an invisible window.
+        window = nil
 
         let tray = AirBridgePopover()
         let hosting = NSHostingController(rootView: tray)
@@ -57,6 +60,7 @@ final class AirBridgeTrayWindow {
         panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
+        panel.delegate = self
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -69,6 +73,12 @@ final class AirBridgeTrayWindow {
 
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closedWindow = notification.object as? NSWindow,
+              closedWindow === window else { return }
+        window = nil
     }
 }
 
