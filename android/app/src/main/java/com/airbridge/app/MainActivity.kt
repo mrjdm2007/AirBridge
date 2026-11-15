@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
     private fun addTextItem(text: String) {
         if (text.isBlank()) return
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, "AirBridge-Text-@@{System.currentTimeMillis()}.txt")
+            put(MediaStore.Downloads.DISPLAY_NAME, "AirBridge-Text-${System.currentTimeMillis()}.txt")
             put(MediaStore.Downloads.MIME_TYPE, "text/plain")
             put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/AirBridge")
             put(MediaStore.Downloads.IS_PENDING, 1)
@@ -225,7 +225,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                             picker.launch(mime)
                         }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(11.dp)) {
                             Icon(Icons.Rounded.FolderOpen, contentDescription = null, modifier = Modifier.size(17.dp))
-                            Spacer(Modifier.width(7.dp)); Text("Select @${category.lowercase()}", fontSize = 12.sp)
+                            Spacer(Modifier.width(7.dp)); Text("Select ${category.lowercase()}", fontSize = 12.sp)
                         }
                         OutlinedTextField(value = textDraft, onValueChange = { textDraft = it }, modifier = Modifier.fillMaxWidth(),
                             placeholder = { Text("Paste or type text to send", color = Muted, fontSize = 11.sp) }, minLines = 2, maxLines = 4,
@@ -234,7 +234,7 @@ private fun AirBridgeScreen(onSend: (AirBridgePeer) -> Unit, onAddText: (String)
                             Icon(Icons.Rounded.ContentPaste, contentDescription = null, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(7.dp)); Text("Add text to transfer", fontSize = 11.sp)
                         }
                         if (AirBridgeState.pendingUris.isNotEmpty()) {
-                            Text("@${AirBridgeState.pendingUris.size} item(s) selected", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                            Text("${AirBridgeState.pendingUris.size} item(s) selected", color = Ink, fontSize = 11.sp, fontWeight = FontWeight.Medium)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = { AirBridgeState.pendingUris = emptyList() }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp)) { Text("Cancel", fontSize = 11.sp) }
                                 Button(onClick = { AirBridgeState.peers.firstOrNull()?.let(onSend) }, enabled = AirBridgeState.peers.isNotEmpty() && !AirBridgeState.transferActive, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Ink, contentColor = Paper), shape = RoundedCornerShape(10.dp)) {
