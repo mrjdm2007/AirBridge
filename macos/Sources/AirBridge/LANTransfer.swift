@@ -86,7 +86,9 @@ final class LANTransferController: ObservableObject {
 
     private func startListener() {
         do {
-            let listener = try NWListener(using: .tcp)
+            let parameters = NWParameters.tcp
+            parameters.includePeerToPeer = true
+            let listener = try NWListener(using: parameters)
             listener.service = NWListener.Service(
                 name: "AirBridge Mac",
                 type: "_airbridge._tcp.",
@@ -112,16 +114,18 @@ final class LANTransferController: ObservableObject {
     }
 
     private func startBrowser() {
-        let browser = NWBrowser(for: .bonjour(type: "_airbridge._tcp.", domain: "local."), using: .tcp)
+        let parameters = NWParameters.tcp
+        parameters.includePeerToPeer = true
+        let browser = NWBrowser(for: .bonjour(type: "_airbridge._tcp.", domain: "local."), using: parameters)
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             let found = results.compactMap { result -> LANPeer? in
                 guard case .service(let name, _, _, _) = result.endpoint,
-                      name == "AirBridge Android" else { return nil }
+                      name.hasPrefix("AirBridge Android") else { return nil }
                 return LANPeer(id: "Moto Edge 50 Neo", endpoint: result.endpoint)
             }
             Task { @MainActor in
                 self?.peers = found
-                if found.isEmpty { self?.status = "Waiting for your Moto Edge 50 Neo on your phone hotspot" }
+                if found.isEmpty { self?.status = "Searching for your phone on the local network…" }
                 else { self?.status = "Moto Edge 50 Neo connected over Wi-Fi" }
             }
         }
