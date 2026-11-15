@@ -171,14 +171,36 @@ struct AirBridgePopover: View {
                             .font(.system(size: 11, weight: .medium))
                         Spacer()
                     }
-                    if lan.isTransferring {
+                    if lan.isReceiving {
+                        ProgressView(value: lan.totalReceiveBytes > 0 ? Double(lan.receivedBytes) / Double(lan.totalReceiveBytes) : 0)
+                        HStack(spacing: 6) {
+                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.receivedBytes), countStyle: .file)) received")
+                                .font(.system(size: 9, design: .monospaced))
+                            Spacer()
+                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(max(0, lan.receiveSpeedBytesPerSecond)), countStyle: .file))/s")
+                                .font(.system(size: 9, design: .monospaced))
+                        }
+                        HStack {
+                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.totalReceiveBytes > lan.receivedBytes ? lan.totalReceiveBytes - lan.receivedBytes : 0), countStyle: .file)) remaining")
+                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Cancel") { lan.cancelTransfer() }
+                        }.font(.system(size: 9)).foregroundStyle(.secondary)
+                    } else if lan.isTransferring {
                         ProgressView(value: lan.progress)
                         HStack(spacing: 6) {
-                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.transferredBytes), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.totalTransferBytes), countStyle: .file))")
+                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.transferredBytes), countStyle: .file)) transferred")
                                 .font(.system(size: 9, design: .monospaced))
                             Spacer()
                             Text("\(ByteCountFormatter.string(fromByteCount: Int64(max(0, lan.transferSpeedBytesPerSecond)), countStyle: .file))/s")
                                 .font(.system(size: 9, design: .monospaced))
+                        }
+                        HStack(spacing: 6) {
+                            Text("\(ByteCountFormatter.string(fromByteCount: Int64(clamping: lan.remainingTransferBytes), countStyle: .file)) remaining")
+                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
+                            Spacer()
+                            Text(lan.remainingTransferTimeLabel)
+                                .font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary)
                         }
                         HStack {
                             Text(lan.status).lineLimit(1)
@@ -203,15 +225,6 @@ struct AirBridgePopover: View {
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 13)
                         .contentShape(RoundedRectangle(cornerRadius: 11))
-                        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
-                            for provider in providers {
-                                _ = provider.loadObject(ofClass: URL.self) { url, _ in
-                                    guard let url else { return }
-                                    DispatchQueue.main.async { selectedURLs.append(url) }
-                                }
-                            }
-                            return true
-                        }
                         .contextMenu {
                             Button {
                                 let text = NSPasteboard.general.string(forType: .string)
@@ -333,6 +346,16 @@ struct AirBridgePopover: View {
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .preferredColorScheme(.dark)
+        // The entire tray is a drop target, not just the central placeholder.
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    DispatchQueue.main.async { selectedURLs.append(url) }
+                }
+            }
+            return true
+        }
         .fileImporter(isPresented: $showingImporter, allowedContentTypes: selectedTypes, allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): selectedURLs.append(contentsOf: urls)
