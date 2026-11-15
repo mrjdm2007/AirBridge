@@ -92,7 +92,7 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
         panel.isMovable = true
         panel.isMovableByWindowBackground = true
         panel.isReleasedWhenClosed = false
-        panel.autosaveName = "AirBridgeDropTray"
+        panel.setFrameAutosaveName("AirBridgeDropTray")
         panel.delegate = self
         panel.isOpaque = false
         panel.backgroundColor = .clear
