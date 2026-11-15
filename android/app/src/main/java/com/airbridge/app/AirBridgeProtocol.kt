@@ -69,58 +69,55 @@ object AirBridgeProtocol {
     fun send(context: Context, uri: Uri, address: InetAddress, port: Int, onProgress: (Long, Long) -> Unit = { _, _ -> }): String {
         val resolver = context.contentResolver
         val name = safeName(queryName(context, uri) ?: "AirBridge-file")
-        val temp = File(context.cacheDir, "outgoing-${System.nanoTime()}.part")
-        try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            resolver.openInputStream(uri).use { source ->
-                requireNotNull(source) { "Cannot open the selected file." }
-                FileOutputStream(temp).use { fileOutput ->
-                    BufferedOutputStream(fileOutput, IO_BUFFER_BYTES).use { target ->
-                        val buffer = ByteArray(IO_BUFFER_BYTES)
-                        var total = 0L
-                        while (true) {
-                            val count = source.read(buffer)
-                            if (count < 0) break
-                            total += count
-                            require(total <= MAX_TRANSFER_BYTES) { "Files larger than 20 GiB are not supported." }
-                            target.write(buffer, 0, count)
-                            digest.update(buffer, 0, count)
-                        }
-                    }
-                }
+        val digest = MessageDigest.getInstance("SHA-256")
+        val buffer = ByteArray(IO_BUFFER_BYTES)
+        var totalBytes = 0L
+
+        // Hash in a first read pass without writing a temporary copy to flash.
+        resolver.openInputStream(uri).use { source ->
+            requireNotNull(source) { "Cannot open the selected file." }
+            while (true) {
+                val count = source.read(buffer)
+                if (count < 0) break
+                totalBytes += count
+                require(totalBytes <= MAX_TRANSFER_BYTES) { "Files larger than 20 GiB are not supported." }
+                digest.update(buffer, 0, count)
             }
-            val hash = digest.digest()
-            Socket().use { socket ->
-                socket.tcpNoDelay = true
-                socket.sendBufferSize = IO_BUFFER_BYTES
-                socket.receiveBufferSize = IO_BUFFER_BYTES
-                socket.connect(java.net.InetSocketAddress(address, port), 15_000)
-                socket.soTimeout = 120_000
-                val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream(), IO_BUFFER_BYTES))
-                val nameBytes = name.toByteArray(Charsets.UTF_8)
-                output.write(magic)
-                output.writeInt(nameBytes.size)
-                output.writeLong(temp.length())
-                output.write(hash)
-                output.write(nameBytes)
-                temp.inputStream().buffered(IO_BUFFER_BYTES).use { input ->
-                    val buffer = ByteArray(IO_BUFFER_BYTES)
-                    var sent = 0L
-                    while (true) {
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        output.write(buffer, 0, count)
-                        sent += count
-                        onProgress(sent, temp.length())
-                    }
-                }
-                output.flush()
-                require(socket.getInputStream().read() == 0x06) { "The receiving device did not confirm the file." }
-            }
-            return name
-        } finally {
-            temp.delete()
         }
+        val hash = digest.digest()
+        val nameBytes = name.toByteArray(Charsets.UTF_8)
+
+        Socket().use { socket ->
+            socket.tcpNoDelay = true
+            socket.sendBufferSize = IO_BUFFER_BYTES
+            socket.receiveBufferSize = IO_BUFFER_BYTES
+            socket.connect(java.net.InetSocketAddress(address, port), 15_000)
+            socket.soTimeout = 120_000
+            val output = DataOutputStream(BufferedOutputStream(socket.getOutputStream(), IO_BUFFER_BYTES))
+            output.write(magic)
+            output.writeInt(nameBytes.size)
+            output.writeLong(totalBytes)
+            output.write(hash)
+            output.write(nameBytes)
+
+            // Re-open the URI and stream directly to TCP, avoiding cache-file write/read overhead.
+            resolver.openInputStream(uri).use { source ->
+                requireNotNull(source) { "The selected file could not be reopened for transfer." }
+                var sent = 0L
+                while (true) {
+                    val count = source.read(buffer)
+                    if (count < 0) break
+                    sent += count
+                    require(sent <= totalBytes) { "The selected file changed while being sent." }
+                    output.write(buffer, 0, count)
+                    onProgress(sent, totalBytes)
+                }
+                require(sent == totalBytes) { "The selected file changed while being sent." }
+            }
+            output.flush()
+            require(socket.getInputStream().read() == 0x06) { "The receiving device did not confirm the file." }
+        }
+        return name
     }
 
     private fun queryName(context: Context, uri: Uri): String? {
