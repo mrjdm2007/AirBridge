@@ -56,7 +56,7 @@ final class AirBridgeTrayWindow: NSObject, NSWindowDelegate {
     static let shared = AirBridgeTrayWindow()
     private var window: NSWindow?
 
-    func show(statusItem: NSStatusItem?) {
+    func show(statusItem: NSStatusItem? = nil) {
         if let window, window.isVisible || window.isMiniaturized {
             if window.isMiniaturized { window.deminiaturize(nil) }
             NSApp.activate(ignoringOtherApps: true)
@@ -445,7 +445,8 @@ struct AirBridgePopover: View {
         Button { selectedMode = title; if title == "Wired" { mtp.refresh() } } label: {
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                Text(title)            }
+                Text(title)
+            }
             .font(.system(size: 10, weight: .medium))
             .frame(maxWidth: .infinity).padding(.vertical, 7)
             .background(selectedMode == title ? Color.primary.opacity(0.13) : Color.clear, in: RoundedRectangle(cornerRadius: 9))
@@ -474,8 +475,7 @@ final class MTPController: ObservableObject {
     @Published var error: String?
 
     func refresh() {
-        guard !isLoading && !isTransferring else { return }
-        isLoading = true
+        guard !isLoading && !isTransferring else { return }        isLoading = true
         error = nil
         Task {
             do {
@@ -530,3 +530,29 @@ final class MTPController: ObservableObject {
         error = nil
         status = "Downloading \(file.name)…"
         Task {
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try MTPService.download(file, to: destination)
+                }.value
+                status = "Saved \(file.name)"
+            } catch {
+                self.error = error.localizedDescription
+            }
+            isTransferring = false
+        }
+    }
+
+    private func reloadAfterTransfer() async {
+        do {
+            let result = try await Task.detached(priority: .userInitiated) {
+                try MTPService.listFiles()
+            }.value
+            files = result.files
+            deviceName = result.deviceName
+            isConnected = true
+        } catch {
+            self.error = error.localizedDescription
+            isConnected = false
+        }
+    }
+}
