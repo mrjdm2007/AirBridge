@@ -32,10 +32,14 @@ final class LANTransferController: ObservableObject {
     @Published private(set) var receivedBytes: UInt64 = 0
     @Published private(set) var totalReceiveBytes: UInt64 = 0
     @Published private(set) var receiveSpeedBytesPerSecond: Double = 0
+    @Published var showDuplicateAlert = false
+    @Published private(set) var duplicateFilename = ""
     @Published private(set) var history: [TransferHistoryEntry] = []
     @Published private(set) var canCancelTransfer = false
     private var activeConnection = LockedBox<NWConnection?>(nil)
     private var activeIncomingConnection = LockedBox<NWConnection?>(nil)
+    private var pendingDuplicateParser: IncomingParser?
+    private var pendingDuplicateConnection: NWConnection?
     private var receiveSampleTime: TimeInterval = 0
     private var receiveSampleBytes: UInt64 = 0
     private let cancellation = LockedBox(false)
@@ -219,6 +223,91 @@ final class LANTransferController: ObservableObject {
             activeIncomingConnection.get()?.cancel()
             isReceiving = false
             activeIncomingConnection.set(nil)
+        } else if showDuplicateAlert {
+            resolveDuplicate(choice: .cancel)
+        }
+    }
+
+    enum DuplicateChoice { case replace, keepBoth, cancel }
+
+    func resolveDuplicate(choice: DuplicateChoice) {
+        guard let parser = pendingDuplicateParser,
+              let connection = pendingDuplicateConnection else { return }
+        showDuplicateAlert = false
+        pendingDuplicateParser = nil
+        pendingDuplicateConnection = nil
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let original = downloads.appendingPathComponent(parser.filename)
+        do {
+            switch choice {
+            case .replace:
+                try parser.commit(to: original)
+            case .keepBoth:
+                try parser.commit(to: uniqueDestination(in: downloads, filename: parser.filename))
+            case .cancel:
+                parser.abort()
+                connection.send(content: Data([0x15]), completion: .contentProcessed { _ in connection.cancel() })
+                activeIncomingConnection.set(nil)
+                status = "Transfer cancelled; existing file was left untouched."
+                error = nil
+                return
+            }
+            acknowledgeIncoming(parser, connection: connection)
+        } catch {
+            parser.abort()
+            connection.send(content: Data([0x15]), completion: .contentProcessed { _ in connection.cancel() })
+            activeIncomingConnection.set(nil)
+            self.error = "Could not save incoming file: \(error.localizedDescription)"
+        }
+    }
+
+    private func completeIncoming(_ parser: IncomingParser, connection: NWConnection) {
+        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let destination = downloads.appendingPathComponent(parser.filename)
+        if FileManager.default.fileExists(atPath: destination.path) {
+            pendingDuplicateParser = parser
+            pendingDuplicateConnection = connection
+            duplicateFilename = parser.filename
+            showDuplicateAlert = true
+            isReceiving = false
+            status = "A file named \(parser.filename) already exists."
+            AirBridgeTrayWindow.shared.show()
+            return
+        }
+        do {
+            try parser.commit(to: destination)
+            acknowledgeIncoming(parser, connection: connection)
+        } catch {
+            parser.abort()
+            connection.send(content: Data([0x15]), completion: .contentProcessed { _ in connection.cancel() })
+            activeIncomingConnection.set(nil)
+            isReceiving = false
+            self.error = "Could not save incoming file: \(error.localizedDescription)"
+        }
+    }
+
+    private func acknowledgeIncoming(_ parser: IncomingParser, connection: NWConnection) {
+        connection.send(content: Data([0x06]), completion: .contentProcessed { _ in connection.cancel() })
+        activeIncomingConnection.set(nil)
+        isReceiving = false
+        receivedBytes = parser.transferSize
+        totalReceiveBytes = parser.transferSize
+        receiveSpeedBytesPerSecond = 0
+        status = "Received \(parser.filename) in Downloads"
+        record(TransferHistoryEntry(id: UUID(), filename: parser.filename, direction: "Received", peer: "Android device", bytes: parser.transferSize, date: Date(), succeeded: true))
+    }
+
+    private func uniqueDestination(in directory: URL, filename: String) -> URL {
+        let original = directory.appendingPathComponent(filename)
+        if !FileManager.default.fileExists(atPath: original.path) { return original }
+        let base = original.deletingPathExtension().lastPathComponent
+        let ext = original.pathExtension
+        var index = 1
+        while true {
+            let name = ext.isEmpty ? "\(base) (\(index))" : "\(base) (\(index)).\(ext)"
+            let candidate = directory.appendingPathComponent(name)
+            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
+            index += 1
         }
     }
 
@@ -315,7 +404,6 @@ final class LANTransferController: ObservableObject {
     private func receive(on connection: NWConnection, parser: IncomingParser) {
         activeIncomingConnection.set(connection)
         if !isReceiving {
-            // Bring up the floating tray automatically for incoming transfers too.
             AirBridgeTrayWindow.shared.show()
             isReceiving = true
             receivedBytes = 0
@@ -328,15 +416,8 @@ final class LANTransferController: ObservableObject {
             if let data, !data.isEmpty {
                 do {
                     if try parser.consume(data) {
-                        connection.send(content: Data([0x06]), completion: .contentProcessed { _ in connection.cancel() })
                         Task { @MainActor in
-                            self?.activeIncomingConnection.set(nil)
-                            self?.isReceiving = false
-                            self?.receivedBytes = parser.transferSize
-                            self?.totalReceiveBytes = parser.transferSize
-                            self?.receiveSpeedBytesPerSecond = 0
-                            self?.status = "Received \(parser.filename) in Downloads"
-                            self?.record(TransferHistoryEntry(id: UUID(), filename: parser.filename, direction: "Received", peer: "Android device", bytes: parser.transferSize, date: Date(), succeeded: true))
+                            self?.completeIncoming(parser, connection: connection)
                         }
                         return
                     }
@@ -362,7 +443,7 @@ final class LANTransferController: ObservableObject {
                         self?.isReceiving = false
                         self?.error = error.localizedDescription
                     }
-                    connection.cancel()
+                    connection.send(content: Data([0x15]), completion: .contentProcessed { _ in connection.cancel() })
                     return
                 }
             }
@@ -442,13 +523,18 @@ private final class IncomingParser: @unchecked Sendable {
             cleanup()
             throw LANError.integrity
         }
-        // Save directly into the user's Downloads folder (not Downloads/AirBridge).
-        let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        let destination = uniqueDestination(in: directory, filename: filename)
-        guard let temporaryURL else { throw LANError.badHeader }
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
-        self.temporaryURL = nil
+        // Keep the verified file staged until the user resolves any name collision.
         return true
+    }
+
+    func commit(to destination: URL) throws {
+        guard let temporaryURL else { throw LANError.badHeader }
+        if FileManager.default.fileExists(atPath: destination.path) {
+            _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporaryURL, backupItemName: nil, options: [])
+        } else {
+            try FileManager.default.moveItem(at: temporaryURL, to: destination)
+        }
+        self.temporaryURL = nil
     }
 
     func abort() { cleanup() }
@@ -460,19 +546,6 @@ private final class IncomingParser: @unchecked Sendable {
         temporaryURL = nil
     }
 
-    private func uniqueDestination(in directory: URL, filename: String) -> URL {
-        let original = directory.appendingPathComponent(filename)
-        if !FileManager.default.fileExists(atPath: original.path) { return original }
-        let base = original.deletingPathExtension().lastPathComponent
-        let ext = original.pathExtension
-        var index = 1
-        while true {
-            let candidateName = ext.isEmpty ? "\(base) (\(index))" : "\(base) (\(index)).\(ext)"
-            let candidate = directory.appendingPathComponent(candidateName)
-            if !FileManager.default.fileExists(atPath: candidate.path) { return candidate }
-            index += 1
-        }
-    }
 
     private static func safeName(_ input: String) -> String {
         let cleaned = input.replacingOccurrences(of: "/", with: "_")
